@@ -10,21 +10,31 @@ import {
   Tableau,
   Vide,
 } from '@/components/ui';
+import { PremiersPas } from '@/components/premiers-pas';
 import { dateFr, euros } from '@/lib/config';
 import { calculerKpi, revenusMensuels } from '@/lib/dashboard';
+import { etatCapacites } from '@/lib/integrations/prerequis';
+import { listerNotifications } from '@/lib/notifications';
+import { PRESENTATION } from '@/lib/notifications-types';
 import { getDevis, getSitesEnAttenteValidation } from '@/lib/repositories';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const [kpi, serie, enAttente, devis] = await Promise.all([
+  const [kpi, serie, enAttente, devis, notifications] = await Promise.all([
     calculerKpi(),
     revenusMensuels(),
     getSitesEnAttenteValidation(),
     getDevis(),
+    listerNotifications(6),
   ]);
 
   const devisAlerte = devis.filter((d) => d.alerte_marge).slice(0, 5);
+  const capacites = etatCapacites();
+
+  // Premier lancement : aucun prospect, aucun client, aucun site.
+  const vierge =
+    kpi.prospection.demarches === 0 && kpi.clients === 0 && kpi.sites.total === 0;
 
   return (
     <>
@@ -32,6 +42,16 @@ export default async function DashboardPage() {
         titre="Dashboard"
         sousTitre="Prospection, revenus, marge et récurrent, en un coup d'œil."
       />
+
+      {vierge && (
+        <div className="mb-4">
+          <PremiersPas
+            capacites={capacites}
+            aDesProspects={kpi.prospection.demarches > 0}
+            aDesClients={kpi.clients > 0}
+          />
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
@@ -115,6 +135,34 @@ export default async function DashboardPage() {
           )}
         </Carte>
       </div>
+
+      <Carte className="mt-4">
+        <TitreSection action={<LienDiscret href="/notifications">Tout voir</LienDiscret>}>
+          Activité récente
+        </TitreSection>
+        {notifications.length === 0 ? (
+          <Vide message="Rien à signaler. Les emails reçus, validations clients et paiements apparaîtront ici." />
+        ) : (
+          <ul className="divide-y divide-ardoise-100">
+            {notifications.map((notification) => (
+              <li key={notification.id} className="flex gap-2.5 py-2.5">
+                <span aria-hidden className="text-base">
+                  {PRESENTATION[notification.type]?.emoji ?? '•'}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm ${notification.lu ? '' : 'font-medium'}`}>
+                    {notification.titre}
+                  </p>
+                  <p className="text-xs text-ardoise-500">{notification.message}</p>
+                </div>
+                <span className="shrink-0 text-xs text-ardoise-400">
+                  {dateFr(notification.created_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Carte>
 
       <Carte className="mt-4">
         <TitreSection action={<LienDiscret href="/facturation">Module facturation</LienDiscret>}>

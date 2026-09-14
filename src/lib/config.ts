@@ -9,10 +9,13 @@ function env(key: string, fallback = ''): string {
 }
 
 /**
- * Mode démo : aucun appel réseau sortant, données fictives en mémoire.
- * Actif par défaut tant que DEMO_MODE n'est pas explicitement mis à "false".
+ * Mode démo : données fictives en mémoire, aucun appel réseau sortant.
+ *
+ * Désactivé par défaut — l'application démarre en production. Le mode démo
+ * s'active explicitement avec DEMO_MODE=true, pour une démonstration ou un
+ * essai sans conséquence.
  */
-export const DEMO_MODE = env('DEMO_MODE', 'true').toLowerCase() !== 'false';
+export const DEMO_MODE = env('DEMO_MODE', 'false').toLowerCase() === 'true';
 
 export const config = {
   demo: DEMO_MODE,

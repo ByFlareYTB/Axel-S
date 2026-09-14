@@ -725,3 +725,31 @@ export function buildDemoData(): Partial<Record<TableName, Row[]>> {
     parametres: PARAMETRES_DEFAUT.map((p) => ({ ...p, updated_at: iso(0) })),
   };
 }
+
+/**
+ * Amorçage de production : la configuration seule.
+ *
+ * Grille tarifaire, offres de lancement et seuils de marge sont des réglages,
+ * pas des données commerciales — ils doivent exister au premier démarrage.
+ * Aucun prospect, client, site, devis ni facture n'est créé : ces tables se
+ * remplissent avec votre activité réelle.
+ */
+export function donneesInitiales(): Partial<Record<TableName, Row[]>> {
+  const maintenant = new Date().toISOString();
+  return {
+    pricing_rules: PRICING_RULES_DEFAUT.map((regle) => ({
+      id: randomUUID(),
+      ...regle,
+      created_at: maintenant,
+      updated_at: maintenant,
+    })),
+    offres_promo: OFFRES_PROMO_DEFAUT.map((offre) => ({
+      id: randomUUID(),
+      ...offre,
+      // Aucune promotion active par défaut : c'est une décision commerciale.
+      actif: false,
+      created_at: maintenant,
+    })),
+    parametres: PARAMETRES_DEFAUT.map((parametre) => ({ ...parametre, updated_at: maintenant })),
+  };
+}

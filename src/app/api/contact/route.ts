@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { erreur, erreurInterne, ok } from '@/lib/api';
 import { db } from '@/lib/db';
+import { notifier } from '@/lib/notifications';
 
 const Corps = z.object({
   site: z.string().optional(),
@@ -29,6 +30,18 @@ export async function POST(requete: Request) {
       auteur: 'formulaire_site',
       contenu: `Message de ${corps.data.nom} <${corps.data.email}> : ${corps.data.message}`,
       created_at: new Date().toISOString(),
+    });
+
+    // Un prospect qui écrit depuis un site livré est un signal commercial :
+    // il remonte immédiatement dans la cloche.
+    await notifier({
+      type: 'email_recu',
+      titre: `Message reçu de ${corps.data.nom}`,
+      message: `${corps.data.email} — ${corps.data.message.slice(0, 140)}`,
+      lien: site ? `/clients/${site.client_id}` : '/clients',
+      clientId: site?.client_id ?? null,
+      siteId: corps.data.site ?? null,
+      urgent: true,
     });
 
     return ok({ ok: true }, 201);

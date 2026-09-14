@@ -8,6 +8,8 @@ import { config } from '@/lib/config';
 import { db } from '@/lib/db';
 import { enrichirProspects, veilleTarifaire } from '@/lib/integrations/perplexity';
 import { rechercherEntreprises } from '@/lib/integrations/sirene';
+import { notifier } from '@/lib/notifications';
+import { estDisponible } from '@/lib/integrations/prerequis';
 import { siretDejaDemarche } from '@/lib/repositories';
 import type { Prospect } from '@/lib/types';
 
@@ -60,35 +62,50 @@ export async function rechercherProspects(criteres: CriteresRecherche): Promise<
     return { prospects: [], ignoresDoublons, coutRecherche: 0, source: 'perplexity+sirene' };
   }
 
-  const enrichissement = await enrichirProspects(
-    nouvelles.map((e) => ({ raison_sociale: e.raison_sociale, ville: e.ville })),
-    criteres.secteur,
-  );
-
   const zone = criteres.codePostal ?? criteres.departement ?? 'Indre-et-Loire';
+
+  // Perplexity enrichit les résultats SIRENE, il ne les conditionne pas :
+  // sans clé, on livre quand même les entreprises trouvées, sans l'empreinte
+  // web ni la veille tarifaire.
+  const avecPerplexity = estDisponible('recherche_web');
+
+  let enrichissement: Awaited<ReturnType<typeof enrichirProspects>> | null = null;
   let concurrence: Awaited<ReturnType<typeof veilleTarifaire>> | null = null;
-  try {
-    concurrence = await veilleTarifaire(zone);
-  } catch (err) {
-    // La veille tarifaire est un bonus commercial : son échec ne doit pas
-    // faire perdre les prospects déjà trouvés.
-    console.warn('[prospection] veille tarifaire indisponible :', err);
+
+  if (avecPerplexity) {
+    try {
+      enrichissement = await enrichirProspects(
+        nouvelles.map((e) => ({ raison_sociale: e.raison_sociale, ville: e.ville })),
+        criteres.secteur,
+      );
+    } catch (err) {
+      console.warn('[prospection] enrichissement web indisponible :', err);
+    }
+    try {
+      concurrence = await veilleTarifaire(zone);
+    } catch (err) {
+      // La veille tarifaire est un bonus commercial : son échec ne doit pas
+      // faire perdre les prospects déjà trouvés.
+      console.warn('[prospection] veille tarifaire indisponible :', err);
+    }
   }
+
+  const coutRecherche = (enrichissement?.coutEstime ?? 0) + (concurrence?.coutEstime ?? 0);
 
   await db.insert('recherches_perplexity', {
     requete: `${criteres.secteur} — ${zone}`,
     secteur: criteres.secteur,
     zone,
-    modele: enrichissement.modele,
+    modele: enrichissement?.modele ?? 'sirene_seul',
     nb_resultats: nouvelles.length,
-    cout_estime: enrichissement.coutEstime + (concurrence?.coutEstime ?? 0),
+    cout_estime: coutRecherche,
     reponse_brute: null,
     created_at: new Date().toISOString(),
   });
 
   const prospects: Prospect[] = [];
   for (const [index, entreprise] of nouvelles.entries()) {
-    const infos = enrichissement.donnees[index] ?? null;
+    const infos = enrichissement?.donnees[index] ?? null;
     const sansSite = !infos?.site_web;
     const obsolete = Boolean(infos?.site_obsolete);
 
@@ -130,12 +147,19 @@ export async function rechercherProspects(criteres: CriteresRecherche): Promise<
     prospects.push(prospect);
   }
 
-  return {
-    prospects,
-    ignoresDoublons,
-    coutRecherche: enrichissement.coutEstime + (concurrence?.coutEstime ?? 0),
-    source: 'perplexity+sirene',
-  };
+  if (prospects.length > 0) {
+    await notifier({
+      type: 'prospects_trouves',
+      titre: `${prospects.length} prospect(s) ajouté(s)`,
+      message:
+        `${criteres.secteur} — ${zone}` +
+        (ignoresDoublons ? ` · ${ignoresDoublons} doublon(s) SIRET ignoré(s)` : '') +
+        (avecPerplexity ? '' : ' · enrichissement web désactivé (clé Perplexity absente)'),
+      lien: '/prospection',
+    });
+  }
+
+  return { prospects, ignoresDoublons, coutRecherche, source: 'perplexity+sirene' };
 }
 
 /** Recherche simulée : produit des prospects plausibles, sans appel réseau. */
@@ -244,5 +268,15 @@ export async function convertirEnClient(prospectId: string): Promise<{ clientId:
   });
 
   await db.update('prospects', prospectId, { statut: 'client' });
+
+  await notifier({
+    type: 'client_confirme',
+    titre: `Nouveau client : ${prospect.raison_sociale}`,
+    message: `Fiche CRM créée${prospect.ville ? ` (${prospect.ville})` : ''}. Vous pouvez lancer la génération du site.`,
+    lien: `/clients/${client.id}`,
+    clientId: client.id,
+    urgent: true,
+  });
+
   return { clientId: client.id };
 }

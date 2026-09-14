@@ -10,6 +10,8 @@
 import { randomUUID } from 'node:crypto';
 import { config } from '@/lib/config';
 import { db } from '@/lib/db';
+import { notifier } from '@/lib/notifications';
+import { exigerCapacite } from './prerequis';
 import { estDesinscrit } from '@/lib/repositories';
 import { requeteJson } from './http';
 
@@ -82,6 +84,7 @@ export async function envoyerEmail(envoi: EnvoiEmail): Promise<{ id: string; pro
   if (await estDesinscrit(envoi.destinataire)) {
     throw new EmailBloqueError(envoi.destinataire);
   }
+  exigerCapacite('emailing');
 
   const token = randomUUID();
   const html = envoi.html + piedRgpd(token);
@@ -106,6 +109,14 @@ export async function envoyerEmail(envoi: EnvoiEmail): Promise<{ id: string; pro
     token_desinscription: token,
     provider_id: providerId,
     envoye_le: new Date().toISOString(),
+  });
+
+  await notifier({
+    type: 'email_envoye',
+    titre: `Email envoyé à ${envoi.destinataire}`,
+    message: envoi.sujet,
+    lien: envoi.clientId ? `/clients/${envoi.clientId}` : '/prospection',
+    clientId: envoi.clientId ?? null,
   });
 
   return { id: journal.id, providerId };

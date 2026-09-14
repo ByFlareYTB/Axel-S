@@ -5,25 +5,24 @@ TPE, artisans et commerçants : **prospection → génération IA → validation
 → hébergement → facturation**, entièrement automatisée et pilotée depuis une
 seule interface mono-utilisateur.
 
-Le dépôt démarre en **mode démo** : l'application tourne avec des données
-fictives cohérentes, sans base de données, sans clé d'API et sans compte
-Stripe.
+L'application **démarre en production** : vos données sont réelles et
+persistantes dès le premier lancement, sans base de données à provisionner.
 
 ```bash
 npm install
-npm run dev     # http://localhost:3000 — identifiants : contact@siteforge.ai / demo
+npm run dev     # http://localhost:3000 — vous choisissez votre mot de passe au premier écran
 ```
-
----
 
 ## Sommaire
 
 - [Démarrage](#démarrage)
 - [Modules](#modules)
+- [Notifications](#notifications)
+- [Sauvegarde unique par site](#sauvegarde-unique-par-site)
 - [Moteur de tarification](#moteur-de-tarification)
 - [Pipeline de génération](#pipeline-de-génération)
 - [Conformité RGPD](#conformité-rgpd)
-- [Passer en production](#passer-en-production)
+- [Stockage et intégrations](#stockage-et-intégrations)
 - [Architecture](#architecture)
 - [Scripts](#scripts)
 - [Annexe Claude Code](#annexe-claude-code)
@@ -32,29 +31,38 @@ npm run dev     # http://localhost:3000 — identifiants : contact@siteforge.ai 
 
 ## Démarrage
 
-### Mode démo (par défaut)
-
 ```bash
 npm install
 npm run dev
 ```
 
-Connexion : `contact@siteforge.ai` / mot de passe `demo`.
+Au premier lancement, l'écran de connexion vous demande de **choisir votre mot
+de passe** (10 caractères minimum). Il est haché en scrypt et conservé avec vos
+données ; la route qui le définit se verrouille ensuite définitivement, de sorte
+que personne ne peut reprendre la main sur une installation déjà configurée.
 
-Un bandeau orange rappelle en permanence que le mode démo est actif. Toutes les
-actions fonctionnent — recherche de prospects, génération de site, mise en
-production, devis, facture, PDF — mais aucun appel réseau n'est émis et rien
-n'est persisté au-delà du redémarrage du serveur.
+Vos données sont écrites dans `.data/siteforge.json` et survivent aux
+redémarrages. Aucune clé d'API n'est nécessaire pour démarrer : chaque
+intégration reste facultative, et son absence désactive uniquement la fonction
+correspondante — en le disant clairement plutôt qu'en simulant un succès.
+
+### Mode démo
+
+Pour explorer l'application avec un jeu de données fictives, sans conséquence :
+
+```bash
+DEMO_MODE=true npm run dev     # mot de passe : demo
+```
+
+Les données sont alors en mémoire et disparaissent au redémarrage.
 
 ### Vérifications
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 33 tests (tarification, marge, PDF, couche de données)
+npm test            # 63 tests
 npm run build       # build de production
 ```
-
----
 
 ## Modules
 
@@ -63,17 +71,80 @@ npm run build       # build de production
 | **Dashboard** | Clients démarchés, taux de conversion, revenus jour/semaine/mois, sites réalisés et actifs, sites en attente de validation, **marge nette moyenne par site**, **MRR** des abonnements, revenus Ads, devis sous les seuils de marge |
 | **Recherche client** | Filtres secteur / code postal, recherche croisée SIRENE + Perplexity, workflow à 4 emojis 🕐 ⏳ ✅ ❌, déduplication par SIRET, relevé des prix de la concurrence locale |
 | **Clients** | Fiche CRM : coordonnées, SIRET, secteur, rentabilité du compte, sites, devis, factures, abonnement, notes — et la génération de site en un clic |
-| **Sites créés** | Statuts brouillon / test / production / maintenance / hors ligne, historique des versions avec **rollback**, suivi des validations client |
+| **Sites créés** | Statuts brouillon / test / production / maintenance / hors ligne, **production courante et sauvegarde unique** restaurable en un clic, suivi des validations client |
 | **Facturation & tarification** | Configurateur de devis instantané, calculateur de marge en temps réel, devis, factures, abonnements récurrents |
 | **Hébergement** | Vue consolidée par site : plateforme, domaine, statut SSL, DNS, coût réel mensuel **comparé au prix facturé** |
 | **Publicité** | Meta Ads et Google Ads en lecture : budget, dépensé, leads, coût/lead, conversions, revenus attribués, ROAS |
-| **Paramètres** | Grille tarifaire éditable, offres de lancement, seuils de marge, état des intégrations, rappel RGPD |
+| **Notifications** | Journal des événements : emails reçus et envoyés, clients confirmés, validations, paiements, alertes de marge |
+| **Paramètres** | Grille tarifaire éditable, offres de lancement, seuils de marge, **état réel de chaque intégration**, rappel RGPD |
 
 Deux pages publiques, destinées au client final et non protégées par
 l'authentification :
 
 - `/validation/<token>` — boutons « j'approuve » / « je souhaite des modifications »
 - `/desinscription/<token>` — désinscription en un clic
+
+---
+
+## Notifications
+
+Une cloche dans la barre de navigation affiche le nombre d'événements non lus.
+Chaque notification décrit un fait déjà arrivé et pointe vers l'écran où agir.
+
+| Événement | Déclencheur |
+| --- | --- |
+| 📥 Email reçu | Formulaire de contact d'un site livré, ou réponse d'un prospect |
+| 📤 Email envoyé | Prospection, demande de validation, envoi de devis |
+| ✅ Client confirmé | Un prospect passe au statut ✅ et sa fiche CRM est créée |
+| 👍 Site approuvé | Le client valide sa maquette |
+| ✏️ Modifications demandées | Le client demande des retouches, avec son commentaire |
+| 🚀 Mise en production | Site publié, devis et facture générés |
+| 🧾 Devis accepté | Facture émise et abonnement ouvert |
+| 💶 Paiement encaissé | Webhook Stripe ou pointage manuel |
+| ⚠️ Paiement échoué | Prélèvement refusé, relance automatique |
+| ⛔ Abonnement suspendu | Site mis hors ligne après 3 échecs |
+| 📉 Alerte de marge | Un devis passe sous un seuil configuré |
+| 🔎 Prospects trouvés | Une recherche a ajouté des prospects |
+
+Les événements marqués urgents partent aussi vers Telegram ou Slack, s'ils sont
+configurés — la cloche vous informe quand vous êtes devant l'écran, les alertes
+temps réel quand vous n'y êtes pas.
+
+Les notifications lues sont purgées au bout de 30 jours
+(`NOTIFICATIONS_RETENTION_JOURS`). Une notification qui échoue n'interrompt
+jamais l'action métier qui l'a déclenchée : un paiement encaissé reste encaissé
+même si la cloche ne s'allume pas.
+
+### Emails entrants
+
+Pour recevoir les réponses de vos prospects dans la cloche, branchez le webhook
+de votre fournisseur sur `POST /api/email/entrant` (Resend : `email.received`,
+Brevo : `inbound`). Le message est rattaché à la fiche client ou prospect
+correspondante et journalisé en note.
+
+---
+
+## Sauvegarde unique par site
+
+Un site ne conserve jamais plus de deux états :
+
+```
+production courante  ←  ce que voit le client
+sauvegarde           ←  l'état précédent, et lui seul
+```
+
+À chaque modification, la production courante descend en sauvegarde — elle
+écrase l'ancienne — et la nouvelle version prend sa place. Le bouton
+**Restaurer** échange les deux ; restaurer deux fois de suite revient au point
+de départ, ce qui rend l'opération sans risque même déclenchée par erreur.
+
+Ce choix est délibérément plus pauvre qu'un historique complet. Deux états se
+raisonnent de tête, se testent exhaustivement, et ne laissent pas s'accumuler
+des versions intermédiaires dont plus personne ne sait si elles sont déployées.
+Un retour en arrière est toujours à un clic, jamais à « laquelle des sept ? ».
+
+Les versions excédentaires sont supprimées automatiquement (`src/lib/pipeline/sauvegarde.ts`),
+et la migration `0004` aligne une base existante sur cette règle.
 
 ---
 
@@ -179,46 +250,63 @@ Prospection sous le régime **opt-out B2B** validé par la CNIL :
 
 ---
 
-## Passer en production
+## Stockage et intégrations
 
-### 1. Base de données
+### Stockage
+
+L'adaptateur est choisi à un seul endroit (`src/lib/db/index.ts`) :
+
+| Condition | Stockage |
+| --- | --- |
+| `DATABASE_URL` renseigné | PostgreSQL (Supabase) — recommandé en ligne |
+| sinon | Fichier `.data/siteforge.json`, persistant |
+| `DEMO_MODE=true` | Mémoire volatile, données fictives |
+
+Le fichier local contient votre comptabilité et vos identifiants : sauvegardez-le
+comme tel. Pour passer sur PostgreSQL :
 
 ```bash
-export DATABASE_URL="postgresql://…"      # Supabase
+export DATABASE_URL="postgresql://…"
 npm run db:migrate
 ```
 
-Les migrations créent l'ensemble du schéma et insèrent la grille tarifaire par
-défaut. Elles sont idempotentes et suivies dans une table `_migrations`.
+Les migrations sont idempotentes et suivies dans une table `_migrations`.
 
-### 2. Identifiants d'accès
+### Intégrations
+
+Chacune est facultative. Sans sa clé, seule la fonction correspondante est
+indisponible — et l'application le dit en nommant la variable à renseigner,
+plutôt que de simuler un succès. La page **Paramètres** affiche l'état réel de
+chaque intégration.
+
+| Capacité | Variables | Sans elle |
+| --- | --- | --- |
+| Génération de sites par IA | `ANTHROPIC_API_KEY` | Impossible de générer un site |
+| Recherche et veille web | `PERPLEXITY_API_KEY` | Recherche limitée à l'annuaire SIRENE |
+| Hébergement automatisé | `VERCEL_TOKEN` | Impossible de déployer |
+| Domaine et SSL | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | Site publié sur son URL Vercel, sans domaine |
+| Encaissement | `STRIPE_SECRET_KEY` | Devis et factures générés, réglés hors ligne |
+| Envoi d'emails | `RESEND_API_KEY` ou `BREVO_API_KEY` | Aucun email ne part |
+| Statistiques publicitaires | `META_ADS_TOKEN` | Pas de synchronisation des campagnes |
+
+### Sécurité
+
+Le mot de passe choisi au premier écran est haché en scrypt. Pour un
+déploiement en ligne, préférez les variables d'environnement, qui ont priorité :
 
 ```bash
 node scripts/hash-password.mjs "votreMotDePasse"   # → AUTH_PASSWORD_HASH=…
 node scripts/totp-secret.mjs contact@siteforge.ai  # → AUTH_TOTP_SECRET=… + QR otpauth://
 ```
 
-Dès que `AUTH_TOTP_SECRET` est renseigné, la 2FA devient obligatoire.
-Générez aussi un `SESSION_SECRET` aléatoire d'au moins 32 caractères.
-
-### 3. Clés d'API
-
-Copiez `.env.example` vers `.env.local` et renseignez ce dont vous avez besoin :
-Claude, Perplexity, Vercel, Cloudflare, Stripe, Resend ou Brevo, Meta/Google Ads.
-
-### 4. Bascule
-
-```bash
-DEMO_MODE=false npm run build && npm start
-```
-
-La page **Paramètres** affiche l'état de chaque intégration : vous voyez d'un
-coup d'œil ce qui est branché et ce qui manque.
+Renseigner `AUTH_TOTP_SECRET` rend la 2FA obligatoire. Générez aussi un
+`SESSION_SECRET` aléatoire d'au moins 32 caractères — un bandeau rouge vous
+avertit tant que la valeur d'exemple est en place en production.
 
 ### Webhook Stripe
 
 Pointez-le sur `POST /api/stripe/webhook` et renseignez `STRIPE_WEBHOOK_SECRET`.
-Les événements traités : `checkout.session.completed` et `invoice.paid`
+Événements traités : `checkout.session.completed` et `invoice.paid`
 (encaissement), `invoice.payment_failed` (relance puis suspension du site après
 3 échecs).
 
@@ -234,20 +322,24 @@ src/
    ├─ config.ts              configuration et formatage € / dates
    ├─ types.ts               types métier, miroir du schéma SQL
    ├─ db/                    adaptateurs de données
-   │  ├─ demo-source.ts        mode démo, en mémoire
-   │  └─ pg-source.ts          PostgreSQL (Supabase)
+   │  ├─ file-source.ts        fichier JSON persistant (production par défaut)
+   │  ├─ pg-source.ts          PostgreSQL (Supabase)
+   │  └─ demo-source.ts        mémoire volatile (mode démo)
    ├─ repositories.ts        requêtes métier réutilisables
    ├─ dashboard.ts           agrégats KPI (marge nette, MRR, conversion)
+   ├─ notifications.ts       journal d'événements (logique serveur)
+   ├─ notifications-types.ts types et présentation, sans dépendance
    ├─ pricing/               moteur de tarification + calculateur de marge
    ├─ pdf/                   générateur PDF sans dépendance + gabarits
    ├─ integrations/          Claude, Perplexity, SIRENE, Vercel, Cloudflare,
    │                         Stripe, emailing, Ads, alertes
-   ├─ pipeline/              prospection, génération de site, facturation
-   └─ auth/                  session signée, TOTP, mot de passe scrypt
+   ├─ pipeline/              prospection, génération de site, facturation,
+   │                         sauvegarde unique
+   └─ auth/                  session signée, TOTP, identifiants scrypt
 
 supabase/migrations/         schéma SQL complet + grille tarifaire
 scripts/                     migrations, hash de mot de passe, secret TOTP
-tests/                       33 tests Vitest
+tests/                       63 tests Vitest
 tooling/claude/              annexe Claude Code (voir plus bas)
 ```
 
@@ -262,6 +354,11 @@ chacune.
 de session sont écrits directement (SVG, `node:crypto`, Web Crypto). Les seules
 dépendances de production sont Next, React, `postgres`, `stripe`, `zod` et le
 SDK Anthropic.
+
+**Aucun succès simulé.** En production, une intégration non configurée refuse
+l'action en nommant la variable manquante. Montrer à un client un site
+« déployé » qui n'existe pas serait la pire des issues : mieux vaut un refus
+explicite qu'une illusion.
 
 ### Modèle utilisé pour la génération
 
@@ -280,7 +377,7 @@ affichée exacte quel que soit le modèle choisi.
 | `npm run dev` | serveur de développement |
 | `npm run build` / `npm start` | build et serveur de production |
 | `npm run typecheck` | vérification TypeScript stricte |
-| `npm test` | suite de tests Vitest |
+| `npm test` | suite de tests Vitest (63 tests) |
 | `npm run db:migrate` | applique les migrations SQL |
 | `node scripts/hash-password.mjs "…"` | hash scrypt du mot de passe |
 | `node scripts/totp-secret.mjs` | secret TOTP + URI `otpauth://` |

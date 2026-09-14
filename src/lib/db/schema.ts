@@ -22,6 +22,7 @@ export const TABLES = [
   'recherches_perplexity',
   'historique_prix',
   'parametres',
+  'notifications',
 ] as const;
 
 export type TableName = (typeof TABLES)[number];
@@ -47,6 +48,7 @@ export const PRIMARY_KEYS: Record<TableName, string> = {
   recherches_perplexity: 'id',
   historique_prix: 'id',
   parametres: 'cle',
+  notifications: 'id',
 };
 
 /**
@@ -57,7 +59,7 @@ export const PRIMARY_KEYS: Record<TableName, string> = {
 export const NUMERIC_COLUMNS: Partial<Record<TableName, string[]>> = {
   prospects: ['score', 'prix_concurrence_min', 'prix_concurrence_max'],
   prospects_history: ['nb_contacts'],
-  sites: ['version_actuelle', 'nb_pages', 'cout_generation_ia'],
+  sites: ['version_actuelle', 'version_sauvegarde', 'nb_pages', 'cout_generation_ia'],
   site_versions: ['version', 'cout_ia'],
   validations_client: ['version'],
   hosting_instances: ['cout_mensuel_reel', 'prix_facture_mensuel'],
@@ -90,7 +92,7 @@ export interface QueryOptions<T> {
 
 /** Contrat minimal commun aux deux adaptateurs. */
 export interface DataSource {
-  readonly kind: 'demo' | 'postgres';
+  readonly kind: 'fichier' | 'postgres' | 'demo';
   list<T>(table: TableName, where?: Record<string, unknown>, opts?: QueryOptions<T>): Promise<T[]>;
   get<T>(table: TableName, id: string): Promise<T | null>;
   findOne<T>(table: TableName, where: Record<string, unknown>): Promise<T | null>;

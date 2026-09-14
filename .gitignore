@@ -17,3 +17,6 @@ coverage/
 .vercel
 .idea/
 .vscode/
+
+# Données de production (contient identifiants et comptabilité)
+.data/

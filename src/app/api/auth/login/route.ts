@@ -13,7 +13,7 @@ export async function POST(requete: Request) {
     const corps = Corps.safeParse(await requete.json());
     if (!corps.success) return erreur('Requête invalide.');
 
-    const resultat = authentifier(corps.data);
+    const resultat = await authentifier(corps.data);
     if (!resultat.ok) return erreur(resultat.erreur, 401);
 
     await ouvrirSession(corps.data.email);

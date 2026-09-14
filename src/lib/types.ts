@@ -91,6 +91,8 @@ export interface Site {
   url_test: string | null;
   url_production: string | null;
   version_actuelle: number;
+  /** Version conservée en sauvegarde — une seule, écrasée à chaque modification. */
+  version_sauvegarde: number | null;
   nb_pages: number;
   options_actives: string[];
   cout_generation_ia: number;

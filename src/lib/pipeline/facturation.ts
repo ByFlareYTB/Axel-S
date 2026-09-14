@@ -9,6 +9,8 @@ import { db } from '@/lib/db';
 import { alerter } from '@/lib/integrations/alertes';
 import { coutAcquisitionMoyen } from '@/lib/integrations/ads';
 import { creerAbonnement, creerOuRecupererClient, creerPaiementUnique } from '@/lib/integrations/stripe';
+import { notifier } from '@/lib/notifications';
+import { estDisponible } from '@/lib/integrations/prerequis';
 import { analyserMarge, type AnalyseMarge, type SeuilsMarge } from '@/lib/pricing/margin';
 import {
   calculerTarification,
@@ -126,9 +128,14 @@ export async function creerDevis(params: {
   }
 
   if (marge.alerte) {
-    await alerter(
-      `⚠️ Devis ${devis.numero} (${client.raison_sociale}) sous les seuils de marge : ${marge.alertes.join(' ')}`,
-    );
+    await notifier({
+      type: 'alerte_marge',
+      titre: `Devis ${devis.numero} sous les seuils de marge`,
+      message: `${client.raison_sociale} — ${marge.alertes.join(' ')}`,
+      lien: `/clients/${client.id}`,
+      clientId: client.id,
+      urgent: true,
+    });
   }
 
   return { devis, simulation };
@@ -208,9 +215,21 @@ export async function facturerDevis(devisId: string): Promise<{
 
   await db.update('devis', devis.id, { statut: 'accepte', accepte_le: maintenant.toISOString() });
 
-  // En mode démo aucun lien Stripe n'est créé : la facture reste « émise ».
+  await notifier({
+    type: 'devis_accepte',
+    titre: `Devis ${devis.numero} accepté`,
+    message:
+      `${client.raison_sociale} — facture ${facture.numero} de ${devis.total_oneshot.toFixed(2)} € émise` +
+      (abonnement ? `, abonnement de ${abonnement.prix_mensuel.toFixed(2)} €/mois ouvert.` : '.'),
+    lien: `/clients/${client.id}`,
+    clientId: client.id,
+    siteId: devis.site_id,
+  });
+
+  // Sans Stripe, la facture est bien émise : elle se règle alors par virement
+  // et se pointe manuellement. L'absence de clé ne bloque pas la facturation.
   let lienPaiement: string | null = null;
-  if (!config.demo) {
+  if (estDisponible('paiement')) {
     const customerId = await creerOuRecupererClient({
       email: client.email,
       nom: client.raison_sociale,
@@ -269,20 +288,43 @@ export async function traiterEchecPaiement(abonnementId: string): Promise<{
     await db.update('sites', abonnement.site_id, { statut: 'hors_ligne' });
   }
 
-  await alerter(
-    suspendre
-      ? `⛔ Abonnement ${abonnementId} suspendu après ${echecs} échecs de paiement (délai ${delaiJours} j).`
-      : `⚠️ Échec de paiement n°${echecs} sur l'abonnement ${abonnementId}, relance envoyée.`,
-  );
+  const client = await db.get<Client>('clients', abonnement.client_id);
+  const nomClient = client?.raison_sociale ?? 'Client inconnu';
+
+  await notifier({
+    type: suspendre ? 'abonnement_suspendu' : 'paiement_echoue',
+    titre: suspendre
+      ? `Abonnement suspendu — ${nomClient}`
+      : `Échec de paiement n°${echecs} — ${nomClient}`,
+    message: suspendre
+      ? `Site mis hors ligne après ${echecs} échecs de prélèvement (délai configuré : ${delaiJours} jours).`
+      : `Relance automatique envoyée. Suspension du site au 3ᵉ échec.`,
+    lien: client ? `/clients/${client.id}` : '/facturation',
+    clientId: abonnement.client_id,
+    siteId: abonnement.site_id,
+    urgent: true,
+  });
 
   return { abonnement: misAJour!, siteSuspendu: suspendre };
 }
 
 /** Marque une facture comme payée (webhook Stripe ou saisie manuelle). */
 export async function marquerPayee(factureId: string, moyen = 'stripe'): Promise<Facture | null> {
-  return db.update<Facture>('factures', factureId, {
+  const facture = await db.update<Facture>('factures', factureId, {
     statut_paiement: 'payee',
     moyen_paiement: moyen,
     date_paiement: new Date().toISOString(),
   });
+  if (!facture) return null;
+
+  const client = await db.get<Client>('clients', facture.client_id);
+  await notifier({
+    type: 'paiement_encaisse',
+    titre: `Paiement reçu — ${facture.total_ttc.toFixed(2)} €`,
+    message: `Facture ${facture.numero}${client ? ` — ${client.raison_sociale}` : ''} réglée par ${moyen}.`,
+    lien: client ? `/clients/${client.id}` : '/facturation',
+    clientId: facture.client_id,
+  });
+
+  return facture;
 }

@@ -5,7 +5,16 @@ import { NOM_COOKIE, verifierJeton } from '@/lib/auth/token';
  * Toute l'application est privée sauf les pages destinées au client final
  * (validation de site, désinscription) et les webhooks.
  */
-const PUBLICS = ['/login', '/validation', '/desinscription', '/api/auth/login', '/api/stripe/webhook', '/api/contact'];
+const PUBLICS = [
+  '/login',
+  '/validation',
+  '/desinscription',
+  '/api/auth/login',
+  '/api/auth/installation',
+  '/api/stripe/webhook',
+  '/api/email/entrant',
+  '/api/contact',
+];
 
 export async function middleware(requete: NextRequest) {
   const chemin = requete.nextUrl.pathname;

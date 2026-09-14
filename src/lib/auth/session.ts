@@ -6,19 +6,13 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { config } from '@/lib/config';
+import { hashMotDePasse, secretTotp, verifierHash } from './identifiants';
 import { DUREE_SESSION_MS, NOM_COOKIE, creerJeton, verifierJeton } from './token';
 import { verifierCode } from './totp';
 
 export { creerJeton, verifierJeton };
 
-/** Hash au format `scrypt:<sel>:<empreinte>`, produit par scripts/hash-password.mjs. */
-export function verifierMotDePasse(motDePasse: string, hash: string): boolean {
-  const [algo, sel, empreinte] = hash.split(':');
-  if (algo !== 'scrypt' || !sel || !empreinte) return false;
-  const calcule = scryptSync(motDePasse, sel, 64);
-  const attendu = Buffer.from(empreinte, 'hex');
-  return calcule.length === attendu.length && timingSafeEqual(calcule, attendu);
-}
+export { verifierHash as verifierMotDePasse } from './identifiants';
 
 export interface TentativeConnexion {
   email: string;
@@ -26,21 +20,26 @@ export interface TentativeConnexion {
   code2fa?: string;
 }
 
-export function authentifier(tentative: TentativeConnexion): { ok: true } | { ok: false; erreur: string } {
+export async function authentifier(
+  tentative: TentativeConnexion,
+): Promise<{ ok: true } | { ok: false; erreur: string }> {
   if (tentative.email.toLowerCase() !== config.auth.email.toLowerCase()) {
     return { ok: false, erreur: 'Identifiants invalides.' };
   }
 
+  const hash = await hashMotDePasse();
+
   // En démo, un mot de passe fixe suffit : aucune donnée réelle n'est exposée.
-  const motDePasseValide = config.auth.passwordHash
-    ? verifierMotDePasse(tentative.motDePasse, config.auth.passwordHash)
+  const motDePasseValide = hash
+    ? verifierHash(tentative.motDePasse, hash)
     : config.demo && tentative.motDePasse === config.auth.demoPassword;
 
   if (!motDePasseValide) return { ok: false, erreur: 'Identifiants invalides.' };
 
-  if (config.auth.totpSecret) {
+  const secret = await secretTotp();
+  if (secret) {
     if (!tentative.code2fa) return { ok: false, erreur: 'Code 2FA requis.' };
-    if (!verifierCode(config.auth.totpSecret, tentative.code2fa)) {
+    if (!verifierCode(secret, tentative.code2fa)) {
       return { ok: false, erreur: 'Code 2FA invalide.' };
     }
   }

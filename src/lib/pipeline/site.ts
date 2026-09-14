@@ -13,8 +13,11 @@ import { alerter } from '@/lib/integrations/alertes';
 import { genererSite, genererSiteDemo, type BriefSite, type SiteGenere } from '@/lib/integrations/claude';
 import { creerCname, statutSsl } from '@/lib/integrations/cloudflare';
 import { envoyerEmail, gabaritValidation } from '@/lib/integrations/email';
+import { estDisponible, exigerCapacite } from '@/lib/integrations/prerequis';
 import { ajouterDomaine, creerProjet, deployer, type FichierDeploiement } from '@/lib/integrations/vercel';
+import { notifier } from '@/lib/notifications';
 import { creerDevisDepuisSite, facturerDevis } from './facturation';
+import { enregistrerVersion, restaurerSauvegarde } from './sauvegarde';
 import type { Client, Devis, Facture, HostingInstance, Site, SiteVersion, ValidationClient } from '@/lib/types';
 
 function slugifier(valeur: string): string {
@@ -95,6 +98,11 @@ export async function genererEtDeployerTest(params: {
   nbPages?: number;
   options?: string[];
 }): Promise<ResultatGeneration> {
+  // Vérifié d'emblée : inutile de créer un site en base si la génération ne
+  // peut pas aboutir.
+  exigerCapacite('generation_ia');
+  exigerCapacite('hebergement');
+
   const client = await db.get<Client>('clients', params.clientId);
   if (!client) throw new Error('Client introuvable.');
 
@@ -108,6 +116,7 @@ export async function genererEtDeployerTest(params: {
       url_test: null,
       url_production: null,
       version_actuelle: 0,
+      version_sauvegarde: null,
       nb_pages: params.nbPages ?? 5,
       options_actives: params.options ?? [],
       cout_generation_ia: 0,
@@ -154,23 +163,22 @@ export async function genererEtDeployerTest(params: {
     }
   }
 
-  const numeroVersion = site.version_actuelle + 1;
-  const version = await db.insert<SiteVersion>('site_versions', {
-    site_id: site.id,
-    version: numeroVersion,
+  // La version courante descend en sauvegarde et la nouvelle prend sa place :
+  // deux états conservés au maximum, jamais plus.
+  const { version, sauvegardee } = await enregistrerVersion(site, {
     libelle: params.retours ? 'Retouches client' : 'Génération initiale',
     contenu: { pages: genere.pages, palette: genere.palette, meta: genere.meta },
-    prompt_utilise: `${genere.nom} — ${site.secteur ?? ''}`,
-    modele_ia: genere.modele,
-    cout_ia: genere.coutEuros,
-    deploy_url: urlTest,
-    cree_par: 'ia',
+    promptUtilise: `${genere.nom} — ${site.secteur ?? ''}`,
+    modeleIa: genere.modele,
+    coutIa: genere.coutEuros,
+    deployUrl: urlTest,
   });
 
   site = (await db.update<Site>('sites', site.id, {
     statut: 'test',
     url_test: urlTest,
-    version_actuelle: numeroVersion,
+    version_actuelle: version.version,
+    version_sauvegarde: sauvegardee,
     cout_generation_ia: Number((site.cout_generation_ia + genere.coutEuros).toFixed(4)),
     derniere_generation: new Date().toISOString(),
   }))!;
@@ -179,7 +187,7 @@ export async function genererEtDeployerTest(params: {
   const token = randomUUID();
   const validation = await db.insert<ValidationClient>('validations_client', {
     site_id: site.id,
-    version: numeroVersion,
+    version: version.version,
     token,
     statut: 'envoyee',
     commentaire: null,
@@ -213,6 +221,8 @@ export interface ResultatProduction {
  * facture selon les options réellement livrées.
  */
 export async function mettreEnProduction(siteId: string, domaine?: string): Promise<ResultatProduction> {
+  exigerCapacite('hebergement');
+
   const site = await db.get<Site>('sites', siteId);
   if (!site) throw new Error('Site introuvable.');
   const client = await db.get<Client>('clients', site.client_id);
@@ -242,14 +252,22 @@ export async function mettreEnProduction(siteId: string, domaine?: string): Prom
     fichiers.push({ chemin: 'mentions-legales.html', contenu: pageMentionsLegales(client) });
 
     const deploiement = await deployer(nomProjet, fichiers, 'production');
-    urlProduction = `https://${domaineFinal}`;
 
     const hebergement = await db.findOne<HostingInstance>('hosting_instances', { site_id: site.id });
-    if (hebergement?.projet_externe_id) {
-      await ajouterDomaine(hebergement.projet_externe_id, domaineFinal);
+
+    // Sans Cloudflare, le site reste en ligne sur son URL Vercel : on ne
+    // prétend pas avoir configuré un domaine qui ne l'est pas.
+    if (estDisponible('dns_ssl')) {
+      if (hebergement?.projet_externe_id) {
+        await ajouterDomaine(hebergement.projet_externe_id, domaineFinal);
+      }
+      await creerCname(domaineFinal, new URL(deploiement.url).hostname);
+      ssl = await statutSsl();
+      urlProduction = `https://${domaineFinal}`;
+    } else {
+      ssl = 'non_configure';
+      urlProduction = deploiement.url;
     }
-    await creerCname(domaineFinal, new URL(deploiement.url).hostname);
-    ssl = await statutSsl();
   }
 
   const hebergement = await db.findOne<HostingInstance>('hosting_instances', { site_id: site.id });
@@ -258,7 +276,7 @@ export async function mettreEnProduction(siteId: string, domaine?: string): Prom
       domaine: domaineFinal,
       sous_domaine: sousDomaine,
       statut_ssl: ssl,
-      dns_configure: true,
+      dns_configure: ssl !== 'non_configure',
       prix_facture_mensuel: 19,
       derniere_verification: new Date().toISOString(),
     });
@@ -270,7 +288,7 @@ export async function mettreEnProduction(siteId: string, domaine?: string): Prom
       domaine: domaineFinal,
       sous_domaine: sousDomaine,
       statut_ssl: ssl,
-      dns_configure: true,
+      dns_configure: ssl !== 'non_configure',
       cout_mensuel_reel: 0.45,
       prix_facture_mensuel: 19,
       derniere_verification: new Date().toISOString(),
@@ -287,7 +305,15 @@ export async function mettreEnProduction(siteId: string, domaine?: string): Prom
   const { devis } = await creerDevisDepuisSite(site.id);
   const { facture } = await facturerDevis(devis.id);
 
-  await alerter(`✅ ${client.raison_sociale} est en production : ${urlProduction} (facture ${facture.numero}).`);
+  await notifier({
+    type: 'site_en_production',
+    titre: `${client.raison_sociale} est en ligne`,
+    message: `Site publié sur ${urlProduction}. Devis ${devis.numero} et facture ${facture.numero} générés automatiquement.`,
+    lien: `/clients/${client.id}`,
+    clientId: client.id,
+    siteId: site.id,
+    urgent: true,
+  });
 
   return { site: siteMisAJour, urlProduction, devis, facture };
 }
@@ -311,25 +337,51 @@ export async function enregistrerValidation(
     repondu_le: new Date().toISOString(),
   }))!;
 
+  const site = await db.get<Site>('sites', validation.site_id);
+  const nomSite = site?.nom ?? 'Site';
+
   if (reponse !== 'approuve') {
-    await alerter(`✏️ Retouches demandées sur le site ${validation.site_id} : ${commentaire ?? 'sans détail'}`);
+    await notifier({
+      type: 'modifications_demandees',
+      titre: `${nomSite} : retouches demandées`,
+      message: commentaire?.trim()
+        ? commentaire
+        : 'Le client demande des modifications, sans précision. Relancez-le pour obtenir le détail.',
+      lien: site ? `/clients/${site.client_id}` : '/sites',
+      clientId: site?.client_id ?? null,
+      siteId: validation.site_id,
+      urgent: true,
+    });
     return { validation: misAJour, production: null };
   }
+
+  await notifier({
+    type: 'site_approuve',
+    titre: `${nomSite} approuvé par le client`,
+    message: 'Mise en production automatique lancée : déploiement, domaine, SSL, puis devis et facture.',
+    lien: site ? `/clients/${site.client_id}` : '/sites',
+    clientId: site?.client_id ?? null,
+    siteId: validation.site_id,
+  });
 
   return { validation: misAJour, production: await mettreEnProduction(validation.site_id) };
 }
 
-/** Rollback : remet en ligne une version antérieure du site. */
-export async function revenirVersion(siteId: string, version: number): Promise<Site> {
-  const cible = await db.findOne<SiteVersion>('site_versions', { site_id: siteId, version });
-  if (!cible) throw new Error(`Version ${version} introuvable pour ce site.`);
+/**
+ * Restaure la sauvegarde d'un site : elle redevient la production, et l'état
+ * qu'elle remplace devient la nouvelle sauvegarde. Opération réversible.
+ */
+export async function restaurer(siteId: string): Promise<Site> {
+  const { site, restauree, remplacee } = await restaurerSauvegarde(siteId);
 
-  const site = await db.get<Site>('sites', siteId);
-  if (!site) throw new Error('Site introuvable.');
+  await notifier({
+    type: 'site_en_production',
+    titre: `${site.nom} : sauvegarde restaurée`,
+    message: `La version ${restauree} redevient la production. La version ${remplacee} est conservée comme sauvegarde.`,
+    lien: `/clients/${site.client_id}`,
+    clientId: site.client_id,
+    siteId: site.id,
+  });
 
-  // La version redevient courante sans être dupliquée : l'historique reste lisible.
-  return (await db.update<Site>('sites', siteId, {
-    version_actuelle: version,
-    url_test: cible.deploy_url ?? site.url_test,
-  }))!;
+  return site;
 }
