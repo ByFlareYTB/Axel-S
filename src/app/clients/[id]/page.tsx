@@ -10,6 +10,7 @@ import {
   TitreSection,
   Vide,
 } from '@/components/ui';
+import { FormulaireClient } from '@/components/formulaire-client';
 import { GenerationSite } from '@/components/generation-site';
 import { dateFr, euros } from '@/lib/config';
 import { getFicheClient } from '@/lib/repositories';
@@ -124,6 +125,10 @@ export default async function FicheClientPage({ params }: { params: Promise<{ id
 
       <div className="mt-4">
         <GenerationSite clientId={client.id} sites={sites} />
+      </div>
+
+      <div className="mt-4">
+        <FormulaireClient client={client} />
       </div>
 
       <Carte className="mt-4">
