@@ -49,6 +49,8 @@ export const config = {
   anthropic: {
     apiKey: env('ANTHROPIC_API_KEY'),
     model: env('ANTHROPIC_MODEL', 'claude-opus-5'),
+    // Requis uniquement si la clé n'est rattachée à aucun workspace.
+    workspaceId: env('ANTHROPIC_WORKSPACE_ID'),
   },
 
   perplexity: {

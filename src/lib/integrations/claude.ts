@@ -116,24 +116,98 @@ function coutEuros(modele: string, entree: number, sortie: number): number {
 }
 
 /**
+ * En-têtes ajoutés à chaque appel.
+ *
+ * Une clé non rattachée à un workspace exige `anthropic-workspace-id`. Une clé
+ * créée dans un workspace n'en a pas besoin : l'en-tête est alors omis, car
+ * l'envoyer à tort provoque un refus.
+ */
+export function entetesAnthropic(): Record<string, string> | undefined {
+  // Lu à l'appel plutôt que depuis l'instantané de `config` : la valeur reste
+  // la même en production, et le comportement ne dépend pas de l'ordre des
+  // imports — comme pour les prérequis d'intégration.
+  const workspace = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  return workspace ? { 'anthropic-workspace-id': workspace } : undefined;
+}
+
+/**
+ * Transforme une erreur de l'API en message actionnable.
+ *
+ * Sans cela, l'interface affiche une enveloppe JSON brute où rien n'indique
+ * quoi corriger. Chaque cas fréquent renvoie ici la manipulation exacte.
+ */
+export function traduireErreur(err: unknown): Error {
+  if (!(err instanceof Anthropic.APIError)) {
+    return err instanceof Error ? err : new Error(String(err));
+  }
+
+  const message = err.message ?? '';
+
+  if (err instanceof Anthropic.AuthenticationError) {
+    return new Error(
+      'Clé Anthropic refusée. Vérifiez ANTHROPIC_API_KEY dans .env.local, ' +
+        'puis redémarrez l’application.',
+    );
+  }
+
+  if (message.includes('not scoped to a workspace')) {
+    return new Error(
+      'Votre clé Anthropic n’est rattachée à aucun workspace. Deux solutions : ' +
+        'créez une nouvelle clé en choisissant un workspace (console.anthropic.com → API keys), ' +
+        'ou renseignez ANTHROPIC_WORKSPACE_ID dans .env.local avec l’identifiant visible dans ' +
+        'l’URL de console.anthropic.com/settings/workspaces.',
+    );
+  }
+
+  if (message.includes('credit balance') || message.includes('insufficient')) {
+    return new Error(
+      'Crédit Anthropic épuisé. Ajoutez du crédit dans console.anthropic.com → Billing, ' +
+        'puis relancez la génération.',
+    );
+  }
+
+  if (err instanceof Anthropic.RateLimitError) {
+    return new Error(
+      'Limite de débit atteinte chez Anthropic. Patientez une minute avant de relancer.',
+    );
+  }
+
+  if (message.includes('model')) {
+    return new Error(
+      `Modèle « ${config.anthropic.model} » refusé par l’API. Vérifiez ANTHROPIC_MODEL ` +
+        '(par exemple claude-opus-5 ou claude-haiku-4-5).',
+    );
+  }
+
+  return new Error(`Appel à l’API Claude échoué (${err.status ?? 'sans code'}) : ${message}`);
+}
+
+/**
  * Appelle l'API Claude et renvoie le site généré.
  * La réponse est longue (plusieurs pages HTML) : on passe donc par le mode
  * streaming pour ne pas buter sur le délai d'expiration HTTP.
  */
 export async function genererSite(brief: BriefSite): Promise<SiteGenere> {
-  const client = new Anthropic({ apiKey: config.anthropic.apiKey });
+  const client = new Anthropic({
+    apiKey: config.anthropic.apiKey,
+    defaultHeaders: entetesAnthropic(),
+  });
   const modele = config.anthropic.model;
 
-  const stream = client.messages.stream({
-    model: modele,
-    max_tokens: 64_000,
-    system:
-      'Tu es un développeur web spécialisé dans les sites vitrines de TPE françaises. ' +
-      'Tu produis du HTML/CSS propre, sobre et performant, et tu réponds exclusivement par du JSON valide.',
-    messages: [{ role: 'user', content: promptSite(brief) }],
-  });
-
-  const reponse = await stream.finalMessage();
+  let reponse: Anthropic.Message;
+  try {
+    const stream = client.messages.stream({
+      model: modele,
+      max_tokens: 64_000,
+      system:
+        'Tu es un développeur web spécialisé dans les sites vitrines de TPE françaises. ' +
+        'Tu produis du HTML/CSS propre, sobre et performant, et tu réponds exclusivement par du JSON valide.',
+      messages: [{ role: 'user', content: promptSite(brief) }],
+    });
+    reponse = await stream.finalMessage();
+  } catch (err) {
+    throw traduireErreur(err);
+  }
 
   const texte = reponse.content
     .filter((bloc): bloc is Anthropic.TextBlock => bloc.type === 'text')
