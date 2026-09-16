@@ -60,7 +60,7 @@ Les données sont alors en mémoire et disparaissent au redémarrage.
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 103 tests
+npm test            # 108 tests
 npm run build       # build de production
 ```
 
@@ -237,6 +237,11 @@ détectés. Une page absente déclenche un second appel ciblé sur elle seule ;
 ce qui subsiste est signalé en clair plutôt que livré en silence — un site dont
 le menu mène à des 404 n'est pas vendable.
 
+**Une génération payée n'est jamais perdue.** La version est enregistrée dès
+que l'IA a répondu, avant toute étape qui peut échouer. Un déploiement en panne
+ou un email qui ne part pas deviennent des avertissements, jamais une erreur qui
+emporte le travail : le site reste consultable et se déploie ensuite d'un clic.
+
 **La génération n'exige que la clé Anthropic.** Un site généré avant que Vercel
 ne soit configuré se met en ligne ensuite d'un clic (**Déployer en test**),
 sans nouvel appel à l'IA — donc sans être repayé.
@@ -357,7 +362,7 @@ src/
 
 supabase/migrations/         schéma SQL complet + grille tarifaire
 scripts/                     migrations, hash de mot de passe, secret TOTP
-tests/                       103 tests Vitest
+tests/                       108 tests Vitest
 tooling/claude/              annexe Claude Code (voir plus bas)
 ```
 
@@ -395,7 +400,7 @@ affichée exacte quel que soit le modèle choisi.
 | `npm run dev` | serveur de développement |
 | `npm run build` / `npm start` | build et serveur de production |
 | `npm run typecheck` | vérification TypeScript stricte |
-| `npm test` | suite de tests Vitest (103 tests) |
+| `npm test` | suite de tests Vitest (108 tests) |
 | `npm run db:migrate` | applique les migrations SQL |
 | `node scripts/hash-password.mjs "…"` | hash scrypt du mot de passe |
 | `node scripts/totp-secret.mjs` | secret TOTP + URI `otpauth://` |

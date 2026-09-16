@@ -63,14 +63,22 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
         urlTest: string | null;
         apercu: string;
         deploye: boolean;
+        emailEnvoye: boolean;
+        lienValidation: string | null;
         coutIa: number;
         avertissements: string[];
       }) => {
         setApercu(d.apercu);
         setAvertissements(d.avertissements ?? []);
-        return d.deploye
-          ? `Site déployé en test : ${d.urlTest}. Email de validation envoyé au client. Coût IA ${d.coutIa.toFixed(2)} €.`
-          : `Site généré (coût IA ${d.coutIa.toFixed(2)} €). Ouvrez l'aperçu ci-dessous. Rien n'a été envoyé au client : renseignez VERCEL_TOKEN pour déployer et demander la validation.`;
+
+        const cout = `Coût IA ${d.coutIa.toFixed(2)} €.`;
+        if (!d.deploye) {
+          return `Site généré et conservé. ${cout} Ouvrez l'aperçu ci-dessous. Rien n'a été envoyé au client.`;
+        }
+        if (d.emailEnvoye) {
+          return `Site en ligne : ${d.urlTest}. Demande de validation envoyée au client. ${cout}`;
+        }
+        return `Site en ligne : ${d.urlTest}. ${cout} Emailing non configuré — transmettez ce lien au client : ${d.lienValidation}`;
       },
     );
 

@@ -156,16 +156,22 @@ async function demanderValidation(
     return { validation, lien, emailEnvoye: false };
   }
 
-  const gabarit = gabaritValidation({ raisonSociale: client.raison_sociale, urlTest, token });
-  await envoyerEmail({
-    destinataire: client.email,
-    sujet: gabarit.sujet,
-    html: gabarit.html,
-    gabarit: 'validation_site',
-    clientId: client.id,
-  });
-
-  return { validation, lien, emailEnvoye: true };
+  // L'envoi peut échouer pour mille raisons hors de notre contrôle. La demande
+  // reste valable : son lien est renvoyé pour être transmis à la main.
+  try {
+    const gabarit = gabaritValidation({ raisonSociale: client.raison_sociale, urlTest, token });
+    await envoyerEmail({
+      destinataire: client.email,
+      sujet: gabarit.sujet,
+      html: gabarit.html,
+      gabarit: 'validation_site',
+      clientId: client.id,
+    });
+    return { validation, lien, emailEnvoye: true };
+  } catch (err) {
+    console.warn('[validation] envoi impossible :', err);
+    return { validation, lien, emailEnvoye: false };
+  }
 }
 
 export interface ResultatGeneration {
@@ -227,38 +233,59 @@ export async function genererEtDeployerTest(params: {
     ? genererSiteDemo(briefDepuis(client, site, params.retours ?? null))
     : await genererSite(briefDepuis(client, site, params.retours ?? null));
 
-  const fichiers = versFichiers(genere, pageMentionsLegales(client));
-  const nomProjet = slugifier(`${client.raison_sociale}-${site.id.slice(0, 6)}`);
-
-  // Sans hébergement configuré, le site existe quand même : il est consultable
-  // en aperçu local, et se déploiera dès qu'un jeton Vercel sera renseigné.
-  const urlTest = await deployerPreview(site, nomProjet, fichiers);
-
-  // La version courante descend en sauvegarde et la nouvelle prend sa place :
-  // deux états conservés au maximum, jamais plus.
+  // ENREGISTREMENT IMMÉDIAT. La génération vient d'être payée : elle est
+  // persistée avant toute étape qui peut échouer. Déployer ou prévenir le
+  // client sont des suites souhaitables, jamais des conditions de survie du
+  // travail produit.
   const { version, sauvegardee } = await enregistrerVersion(site, {
     libelle: params.retours ? 'Retouches client' : 'Génération initiale',
     contenu: { pages: genere.pages, palette: genere.palette, meta: genere.meta },
     promptUtilise: `${genere.nom} — ${site.secteur ?? ''}`,
     modeleIa: genere.modele,
     coutIa: genere.coutEuros,
-    deployUrl: urlTest,
+    deployUrl: null,
   });
 
   site = (await db.update<Site>('sites', site.id, {
     statut: 'test',
-    url_test: urlTest,
     version_actuelle: version.version,
     version_sauvegarde: sauvegardee,
     cout_generation_ia: Number((site.cout_generation_ia + genere.coutEuros).toFixed(4)),
     derniere_generation: new Date().toISOString(),
   }))!;
 
-  // La demande de validation n'a de sens que si le client peut ouvrir le site :
-  // sans URL publique, on ne lui envoie rien.
-  const demande = urlTest
-    ? await demanderValidation(site, client, version.version, urlTest)
-    : null;
+  const avertissements = [...genere.avertissements];
+
+  // Déploiement : une panne de l'hébergeur ne doit pas emporter la génération.
+  const fichiers = versFichiers(genere, pageMentionsLegales(client));
+  const nomProjet = slugifier(`${client.raison_sociale}-${site.id.slice(0, 6)}`);
+
+  let urlTest: string | null = null;
+  try {
+    urlTest = await deployerPreview(site, nomProjet, fichiers);
+  } catch (err) {
+    avertissements.push(
+      `Site généré et conservé, mais la mise en ligne a échoué : ${message(err)} ` +
+        'Consultez l’aperçu, puis réessayez avec « Déployer en test » — sans nouvelle génération.',
+    );
+  }
+
+  if (urlTest) {
+    site = (await db.update<Site>('sites', site.id, { url_test: urlTest }))!;
+    await db.update('site_versions', version.id, { deploy_url: urlTest });
+  }
+
+  // La demande de validation n'a de sens que si le client peut ouvrir le site.
+  let demande: DemandeValidation | null = null;
+  if (urlTest) {
+    try {
+      demande = await demanderValidation(site, client, version.version, urlTest);
+    } catch (err) {
+      avertissements.push(
+        `Site en ligne, mais la demande de validation n’a pas pu partir : ${message(err)}`,
+      );
+    }
+  }
 
   return {
     site,
@@ -270,8 +297,13 @@ export async function genererEtDeployerTest(params: {
     apercu: `/apercu/${site.id}`,
     deploye: Boolean(urlTest),
     coutIa: genere.coutEuros,
-    avertissements: genere.avertissements,
+    avertissements,
   };
+}
+
+/** Message lisible d'une exception, pour l'insérer dans un avertissement. */
+function message(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 
