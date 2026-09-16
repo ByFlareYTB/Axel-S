@@ -79,11 +79,103 @@ function briefDepuis(client: Client, site: Site, retours: string | null): BriefS
   };
 }
 
+/**
+ * Déploie une version en preview, si et seulement si l'hébergement est
+ * configuré. Renvoie l'URL publique, ou null quand il ne l'est pas : le site
+ * reste alors consultable en aperçu local.
+ */
+async function deployerPreview(
+  site: Site,
+  nomProjet: string,
+  fichiers: FichierDeploiement[],
+): Promise<string | null> {
+  if (config.demo) return `https://${nomProjet}-test.vercel.app`;
+  if (!estDisponible('hebergement')) return null;
+
+  const hebergement = await db.findOne<HostingInstance>('hosting_instances', { site_id: site.id });
+  const projetId = hebergement?.projet_externe_id ?? (await creerProjet(nomProjet)).id;
+  const urlTest = (await deployer(nomProjet, fichiers, 'preview')).url;
+
+  if (hebergement) {
+    await db.update('hosting_instances', hebergement.id, {
+      projet_externe_id: projetId,
+      derniere_verification: new Date().toISOString(),
+    });
+  } else {
+    await db.insert('hosting_instances', {
+      site_id: site.id,
+      plateforme: 'vercel',
+      projet_externe_id: projetId,
+      domaine: null,
+      sous_domaine: `${nomProjet}.${config.cloudflare.rootDomain}`,
+      statut_ssl: 'en_attente',
+      dns_configure: false,
+      cout_mensuel_reel: 0.45,
+      prix_facture_mensuel: 0,
+    });
+  }
+
+  return urlTest;
+}
+
+export interface DemandeValidation {
+  validation: ValidationClient;
+  /** Page que le client doit ouvrir pour répondre. */
+  lien: string;
+  /** Faux quand l'emailing n'est pas configuré : à vous de transmettre le lien. */
+  emailEnvoye: boolean;
+}
+
+/**
+ * Crée la demande de validation et l'envoie au client.
+ *
+ * Sans fournisseur d'emailing, la demande est tout de même enregistrée et son
+ * lien renvoyé : vous le transmettez alors vous-même. Refuser de créer la
+ * demande obligerait à tout recommencer une fois Resend configuré.
+ */
+async function demanderValidation(
+  site: Site,
+  client: Client,
+  version: number,
+  urlTest: string,
+): Promise<DemandeValidation> {
+  const token = randomUUID();
+  const validation = await db.insert<ValidationClient>('validations_client', {
+    site_id: site.id,
+    version,
+    token,
+    statut: 'envoyee',
+    commentaire: null,
+    envoye_le: new Date().toISOString(),
+    repondu_le: null,
+    expire_le: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+  });
+
+  const lien = `${config.appBaseUrl}/validation/${token}`;
+  if (!config.demo && !estDisponible('emailing')) {
+    return { validation, lien, emailEnvoye: false };
+  }
+
+  const gabarit = gabaritValidation({ raisonSociale: client.raison_sociale, urlTest, token });
+  await envoyerEmail({
+    destinataire: client.email,
+    sujet: gabarit.sujet,
+    html: gabarit.html,
+    gabarit: 'validation_site',
+    clientId: client.id,
+  });
+
+  return { validation, lien, emailEnvoye: true };
+}
+
 export interface ResultatGeneration {
   site: Site;
   version: SiteVersion;
   /** Null tant qu'aucune URL publique n'existe : rien n'est envoyé au client. */
   validation: ValidationClient | null;
+  /** Lien à transmettre au client si l'emailing n'est pas configuré. */
+  lienValidation: string | null;
+  emailEnvoye: boolean;
   /** URL de test publique, ou null si l'hébergement n'est pas configuré. */
   urlTest: string | null;
   /** Aperçu local, toujours disponible. */
@@ -140,38 +232,7 @@ export async function genererEtDeployerTest(params: {
 
   // Sans hébergement configuré, le site existe quand même : il est consultable
   // en aperçu local, et se déploiera dès qu'un jeton Vercel sera renseigné.
-  const deploiementPossible = config.demo || estDisponible('hebergement');
-
-  let urlTest: string | null = null;
-  if (config.demo) {
-    urlTest = `https://${nomProjet}-test.vercel.app`;
-  } else if (deploiementPossible) {
-    const hebergement = await db.findOne<HostingInstance>('hosting_instances', { site_id: site.id });
-    let projetId = hebergement?.projet_externe_id ?? null;
-    if (!projetId) {
-      projetId = (await creerProjet(nomProjet)).id;
-    }
-    urlTest = (await deployer(nomProjet, fichiers, 'preview')).url;
-
-    if (hebergement) {
-      await db.update('hosting_instances', hebergement.id, {
-        projet_externe_id: projetId,
-        derniere_verification: new Date().toISOString(),
-      });
-    } else {
-      await db.insert('hosting_instances', {
-        site_id: site.id,
-        plateforme: 'vercel',
-        projet_externe_id: projetId,
-        domaine: null,
-        sous_domaine: `${nomProjet}.${config.cloudflare.rootDomain}`,
-        statut_ssl: 'en_attente',
-        dns_configure: false,
-        cout_mensuel_reel: 0.45,
-        prix_facture_mensuel: 0,
-      });
-    }
-  }
+  const urlTest = await deployerPreview(site, nomProjet, fichiers);
 
   // La version courante descend en sauvegarde et la nouvelle prend sa place :
   // deux états conservés au maximum, jamais plus.
@@ -195,39 +256,99 @@ export async function genererEtDeployerTest(params: {
 
   // La demande de validation n'a de sens que si le client peut ouvrir le site :
   // sans URL publique, on ne lui envoie rien.
-  let validation: ValidationClient | null = null;
-  if (urlTest) {
-    const token = randomUUID();
-    validation = await db.insert<ValidationClient>('validations_client', {
-      site_id: site.id,
-      version: version.version,
-      token,
-      statut: 'envoyee',
-      commentaire: null,
-      envoye_le: new Date().toISOString(),
-      repondu_le: null,
-      expire_le: new Date(Date.now() + 30 * 86_400_000).toISOString(),
-    });
-
-    const gabarit = gabaritValidation({ raisonSociale: client.raison_sociale, urlTest, token });
-    await envoyerEmail({
-      destinataire: client.email,
-      sujet: gabarit.sujet,
-      html: gabarit.html,
-      gabarit: 'validation_site',
-      clientId: client.id,
-    });
-  }
+  const demande = urlTest
+    ? await demanderValidation(site, client, version.version, urlTest)
+    : null;
 
   return {
     site,
     version,
-    validation,
+    validation: demande?.validation ?? null,
+    lienValidation: demande?.lien ?? null,
+    emailEnvoye: demande?.emailEnvoye ?? false,
     urlTest,
     apercu: `/apercu/${site.id}`,
     deploye: Boolean(urlTest),
     coutIa: genere.coutEuros,
     avertissements: genere.avertissements,
+  };
+}
+
+
+export interface ResultatDeploiement {
+  site: Site;
+  urlTest: string;
+  validation: ValidationClient | null;
+  lienValidation: string | null;
+  emailEnvoye: boolean;
+}
+
+/**
+ * Déploie en test la version déjà générée d'un site, sans rappeler l'IA.
+ *
+ * Indispensable dès lors que génération et hébergement sont découplés : un
+ * site produit avant que Vercel ne soit configuré doit pouvoir être mis en
+ * ligne sans être régénéré — donc sans être repayé.
+ */
+export async function deployerEnTest(siteId: string): Promise<ResultatDeploiement> {
+  exigerCapacite('hebergement');
+
+  const site = await db.get<Site>('sites', siteId);
+  if (!site) throw new Error('Site introuvable.');
+
+  const client = await db.get<Client>('clients', site.client_id);
+  if (!client) throw new Error('Client introuvable.');
+
+  const version = await db.findOne<SiteVersion>('site_versions', {
+    site_id: site.id,
+    version: site.version_actuelle,
+  });
+  if (!version) {
+    throw new Error("Ce site n'a aucune version générée. Lancez d'abord une génération.");
+  }
+
+  const contenu = version.contenu as { pages?: { slug: string; html: string }[] };
+  const pages = contenu.pages ?? [];
+  if (pages.length === 0) {
+    throw new Error('La version courante ne contient aucune page.');
+  }
+
+  const fichiers: FichierDeploiement[] = pages.map((page) => ({
+    chemin: page.slug === 'accueil' ? 'index.html' : `${page.slug}.html`,
+    contenu: page.html,
+  }));
+  fichiers.push({ chemin: 'mentions-legales.html', contenu: pageMentionsLegales(client) });
+
+  const nomProjet = slugifier(`${client.raison_sociale}-${site.id.slice(0, 6)}`);
+  const urlTest = await deployerPreview(site, nomProjet, fichiers);
+  if (!urlTest) throw new Error("Le déploiement n'a renvoyé aucune URL.");
+
+  const misAJour = (await db.update<Site>('sites', site.id, {
+    statut: 'test',
+    url_test: urlTest,
+  }))!;
+
+  await db.update('site_versions', version.id, { deploy_url: urlTest });
+
+  const demande = await demanderValidation(misAJour, client, version.version, urlTest);
+
+  await notifier({
+    type: 'site_en_production',
+    titre: `${misAJour.nom} déployé en test`,
+    message: demande.emailEnvoye
+      ? `Version ${version.version} en ligne sur ${urlTest}. Demande de validation envoyée à ${client.email}.`
+      : `Version ${version.version} en ligne sur ${urlTest}. Emailing non configuré : transmettez vous-même le lien de validation.`,
+    lien: `/clients/${client.id}`,
+    clientId: client.id,
+    siteId: site.id,
+  });
+
+  return {
+    site: misAJour,
+    urlTest,
+    validation: demande.validation,
+    lienValidation: demande.lien,
+    emailEnvoye: demande.emailEnvoye,
   };
 }
 

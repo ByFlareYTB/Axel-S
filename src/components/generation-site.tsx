@@ -74,6 +74,16 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
       },
     );
 
+  const deployerEnTest = () =>
+    appeler(
+      '/api/sites/deployer',
+      { siteId },
+      (d: { urlTest: string; emailEnvoye: boolean; lienValidation: string }) =>
+        d.emailEnvoye
+          ? `Site en ligne : ${d.urlTest}. Demande de validation envoyée au client.`
+          : `Site en ligne : ${d.urlTest}. Emailing non configuré — transmettez ce lien au client : ${d.lienValidation}`,
+    );
+
   const mettreEnProduction = () =>
     appeler(
       '/api/sites/production',
@@ -156,6 +166,16 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
           className="rounded-lg bg-ardoise-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {enCours ? 'Génération…' : 'Générer et déployer en test'}
+        </button>
+
+        <button
+          type="button"
+          disabled={enCours || !siteId}
+          onClick={() => demarrer(deployerEnTest)}
+          className="rounded-lg border border-ardoise-300 px-4 py-2 text-sm font-medium disabled:opacity-50"
+          title="Met en ligne la version déjà générée, sans nouvel appel à l'IA"
+        >
+          Déployer en test
         </button>
 
         <button

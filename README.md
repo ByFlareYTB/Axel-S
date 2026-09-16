@@ -237,7 +237,11 @@ détectés. Une page absente déclenche un second appel ciblé sur elle seule ;
 ce qui subsiste est signalé en clair plutôt que livré en silence — un site dont
 le menu mène à des 404 n'est pas vendable.
 
-**La génération n'exige que la clé Anthropic.** L'hébergement est une étape
+**La génération n'exige que la clé Anthropic.** Un site généré avant que Vercel
+ne soit configuré se met en ligne ensuite d'un clic (**Déployer en test**),
+sans nouvel appel à l'IA — donc sans être repayé.
+
+ L'hébergement est une étape
 distincte : sans jeton Vercel, le site est bien généré et consultable en
 **aperçu local** (`/apercu/<id>`), mais rien n'est envoyé au client — une
 demande de validation n'a de sens que si le client peut ouvrir le site. Le HTML
@@ -300,7 +304,7 @@ chaque intégration.
 | Hébergement automatisé | `VERCEL_TOKEN` | Sites générés et consultables en aperçu, mais non déployés |
 | Domaine et SSL | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | Site publié sur son URL Vercel, sans domaine |
 | Encaissement | `STRIPE_SECRET_KEY` | Devis et factures générés, réglés hors ligne |
-| Envoi d'emails | `RESEND_API_KEY` ou `BREVO_API_KEY` | Aucun email ne part |
+| Envoi d'emails | `RESEND_API_KEY` ou `BREVO_API_KEY` | Aucun email ne part ; les demandes de validation sont créées et leur lien vous est donné à transmettre |
 | Statistiques publicitaires | `META_ADS_TOKEN` | Pas de synchronisation des campagnes |
 
 ### Sécurité
