@@ -26,6 +26,7 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
   const [options, setOptions] = useState<string[]>(sites[0]?.options_actives ?? []);
   const [retours, setRetours] = useState('');
   const [message, setMessage] = useState<string | null>(null);
+  const [apercu, setApercu] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, demarrer] = useTransition();
 
@@ -56,8 +57,12 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
     appeler(
       '/api/sites/generer',
       { clientId, siteId: siteId || undefined, nbPages, options, retours: retours || undefined },
-      (d: { urlTest: string; coutIa: number }) =>
-        `Site déployé en test : ${d.urlTest}. Email de validation envoyé au client. Coût IA ${d.coutIa.toFixed(2)} €.`,
+      (d: { urlTest: string | null; apercu: string; deploye: boolean; coutIa: number }) => {
+        setApercu(d.apercu);
+        return d.deploye
+          ? `Site déployé en test : ${d.urlTest}. Email de validation envoyé au client. Coût IA ${d.coutIa.toFixed(2)} €.`
+          : `Site généré (coût IA ${d.coutIa.toFixed(2)} €). Ouvrez l'aperçu ci-dessous. Rien n'a été envoyé au client : renseignez VERCEL_TOKEN pour déployer et demander la validation.`;
+      },
     );
 
   const mettreEnProduction = () =>
@@ -156,6 +161,18 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
       </div>
 
       {message && <p className="mt-3 text-sm text-emerald-700">{message}</p>}
+
+      {apercu && (
+        <a
+          href={apercu}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-2 inline-block rounded-lg border border-ardoise-300 px-4 py-2 text-sm font-medium"
+        >
+          Ouvrir l&apos;aperçu du site →
+        </a>
+      )}
+
       {erreur && <p className="mt-3 text-sm text-rose-600">{erreur}</p>}
     </Carte>
   );

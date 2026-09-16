@@ -60,7 +60,7 @@ Les données sont alors en mémoire et disparaissent au redémarrage.
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 63 tests
+npm test            # 81 tests
 npm run build       # build de production
 ```
 
@@ -70,7 +70,7 @@ npm run build       # build de production
 | --- | --- |
 | **Dashboard** | Clients démarchés, taux de conversion, revenus jour/semaine/mois, sites réalisés et actifs, sites en attente de validation, **marge nette moyenne par site**, **MRR** des abonnements, revenus Ads, devis sous les seuils de marge |
 | **Recherche client** | Filtres secteur / code postal, recherche croisée SIRENE + Perplexity, workflow à 4 emojis 🕐 ⏳ ✅ ❌, déduplication par SIRET, relevé des prix de la concurrence locale |
-| **Clients** | Fiche CRM : coordonnées, SIRET, secteur, rentabilité du compte, sites, devis, factures, abonnement, notes — et la génération de site en un clic |
+| **Clients** | Saisie manuelle ou conversion d'un prospect. Fiche CRM : coordonnées, SIRET, rentabilité du compte, sites, devis, factures, abonnement, notes — et la génération de site en un clic |
 | **Sites créés** | Statuts brouillon / test / production / maintenance / hors ligne, **production courante et sauvegarde unique** restaurable en un clic, suivi des validations client |
 | **Facturation & tarification** | Configurateur de devis instantané, calculateur de marge en temps réel, devis, factures, abonnements récurrents |
 | **Hébergement** | Vue consolidée par site : plateforme, domaine, statut SSL, DNS, coût réel mensuel **comparé au prix facturé** |
@@ -227,8 +227,15 @@ analyse IA → génération (API Claude, prompt structuré par secteur)
              → facture émise + abonnement mensuel ouvert
 ```
 
-Chaque génération crée une version dans `site_versions` avec son coût IA réel,
-ce qui rend le rollback possible et la marge par site vérifiable.
+Chaque génération crée une version avec son coût IA réel, ce qui rend la
+restauration possible et la marge par site vérifiable.
+
+**La génération n'exige que la clé Anthropic.** L'hébergement est une étape
+distincte : sans jeton Vercel, le site est bien généré et consultable en
+**aperçu local** (`/apercu/<id>`), mais rien n'est envoyé au client — une
+demande de validation n'a de sens que si le client peut ouvrir le site. Le HTML
+produit par l'IA est servi sous `Content-Security-Policy: sandbox`, donc une
+page générée ne peut ni lire votre session ni appeler l'API.
 
 Les mentions légales ne sont **jamais** laissées à la génération IA : elles sont
 composées par l'application à partir des données du client et de l'éditeur.
@@ -283,7 +290,7 @@ chaque intégration.
 | --- | --- | --- |
 | Génération de sites par IA | `ANTHROPIC_API_KEY` | Impossible de générer un site |
 | Recherche et veille web | `PERPLEXITY_API_KEY` | Recherche limitée à l'annuaire SIRENE |
-| Hébergement automatisé | `VERCEL_TOKEN` | Impossible de déployer |
+| Hébergement automatisé | `VERCEL_TOKEN` | Sites générés et consultables en aperçu, mais non déployés |
 | Domaine et SSL | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | Site publié sur son URL Vercel, sans domaine |
 | Encaissement | `STRIPE_SECRET_KEY` | Devis et factures générés, réglés hors ligne |
 | Envoi d'emails | `RESEND_API_KEY` ou `BREVO_API_KEY` | Aucun email ne part |
@@ -339,7 +346,7 @@ src/
 
 supabase/migrations/         schéma SQL complet + grille tarifaire
 scripts/                     migrations, hash de mot de passe, secret TOTP
-tests/                       63 tests Vitest
+tests/                       81 tests Vitest
 tooling/claude/              annexe Claude Code (voir plus bas)
 ```
 
@@ -377,7 +384,7 @@ affichée exacte quel que soit le modèle choisi.
 | `npm run dev` | serveur de développement |
 | `npm run build` / `npm start` | build et serveur de production |
 | `npm run typecheck` | vérification TypeScript stricte |
-| `npm test` | suite de tests Vitest (63 tests) |
+| `npm test` | suite de tests Vitest (81 tests) |
 | `npm run db:migrate` | applique les migrations SQL |
 | `node scripts/hash-password.mjs "…"` | hash scrypt du mot de passe |
 | `node scripts/totp-secret.mjs` | secret TOTP + URI `otpauth://` |

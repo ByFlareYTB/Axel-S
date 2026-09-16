@@ -87,10 +87,21 @@ export function GestionSite({
                 🟢 En production — version {site.version_actuelle}
               </p>
               {courante ? (
-                <p className="mt-1 text-xs text-ardoise-600">
-                  {courante.libelle ?? '—'} · {dateFr(courante.created_at)} ·{' '}
-                  {euros(courante.cout_ia)}
-                </p>
+                <>
+                  <p className="mt-1 text-xs text-ardoise-600">
+                    {courante.libelle ?? '—'} · {dateFr(courante.created_at)} ·{' '}
+                    {euros(courante.cout_ia)}
+                  </p>
+                  {/* Toujours disponible, même sans hébergement configuré. */}
+                  <a
+                    href={`/apercu/${site.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1.5 inline-block text-xs text-sky-700 hover:underline"
+                  >
+                    Ouvrir l&apos;aperçu →
+                  </a>
+                </>
               ) : (
                 <p className="mt-1 text-xs text-ardoise-500">Aucune version générée.</p>
               )}

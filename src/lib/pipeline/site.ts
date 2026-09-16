@@ -82,8 +82,13 @@ function briefDepuis(client: Client, site: Site, retours: string | null): BriefS
 export interface ResultatGeneration {
   site: Site;
   version: SiteVersion;
-  validation: ValidationClient;
-  urlTest: string;
+  /** Null tant qu'aucune URL publique n'existe : rien n'est envoyé au client. */
+  validation: ValidationClient | null;
+  /** URL de test publique, ou null si l'hébergement n'est pas configuré. */
+  urlTest: string | null;
+  /** Aperçu local, toujours disponible. */
+  apercu: string;
+  deploye: boolean;
   coutIa: number;
 }
 
@@ -98,10 +103,9 @@ export async function genererEtDeployerTest(params: {
   nbPages?: number;
   options?: string[];
 }): Promise<ResultatGeneration> {
-  // Vérifié d'emblée : inutile de créer un site en base si la génération ne
-  // peut pas aboutir.
+  // Seule la génération est indispensable. L'hébergement est une étape
+  // distincte : voir ce que l'IA a produit ne doit pas exiger un compte Vercel.
   exigerCapacite('generation_ia');
-  exigerCapacite('hebergement');
 
   const client = await db.get<Client>('clients', params.clientId);
   if (!client) throw new Error('Client introuvable.');
@@ -132,10 +136,14 @@ export async function genererEtDeployerTest(params: {
   const fichiers = versFichiers(genere, pageMentionsLegales(client));
   const nomProjet = slugifier(`${client.raison_sociale}-${site.id.slice(0, 6)}`);
 
-  let urlTest: string;
+  // Sans hébergement configuré, le site existe quand même : il est consultable
+  // en aperçu local, et se déploiera dès qu'un jeton Vercel sera renseigné.
+  const deploiementPossible = config.demo || estDisponible('hebergement');
+
+  let urlTest: string | null = null;
   if (config.demo) {
     urlTest = `https://${nomProjet}-test.vercel.app`;
-  } else {
+  } else if (deploiementPossible) {
     const hebergement = await db.findOne<HostingInstance>('hosting_instances', { site_id: site.id });
     let projetId = hebergement?.projet_externe_id ?? null;
     if (!projetId) {
@@ -183,29 +191,41 @@ export async function genererEtDeployerTest(params: {
     derniere_generation: new Date().toISOString(),
   }))!;
 
-  // Email de validation avec boutons « j'approuve » / « je souhaite des modifications ».
-  const token = randomUUID();
-  const validation = await db.insert<ValidationClient>('validations_client', {
-    site_id: site.id,
-    version: version.version,
-    token,
-    statut: 'envoyee',
-    commentaire: null,
-    envoye_le: new Date().toISOString(),
-    repondu_le: null,
-    expire_le: new Date(Date.now() + 30 * 86_400_000).toISOString(),
-  });
+  // La demande de validation n'a de sens que si le client peut ouvrir le site :
+  // sans URL publique, on ne lui envoie rien.
+  let validation: ValidationClient | null = null;
+  if (urlTest) {
+    const token = randomUUID();
+    validation = await db.insert<ValidationClient>('validations_client', {
+      site_id: site.id,
+      version: version.version,
+      token,
+      statut: 'envoyee',
+      commentaire: null,
+      envoye_le: new Date().toISOString(),
+      repondu_le: null,
+      expire_le: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+    });
 
-  const gabarit = gabaritValidation({ raisonSociale: client.raison_sociale, urlTest, token });
-  await envoyerEmail({
-    destinataire: client.email,
-    sujet: gabarit.sujet,
-    html: gabarit.html,
-    gabarit: 'validation_site',
-    clientId: client.id,
-  });
+    const gabarit = gabaritValidation({ raisonSociale: client.raison_sociale, urlTest, token });
+    await envoyerEmail({
+      destinataire: client.email,
+      sujet: gabarit.sujet,
+      html: gabarit.html,
+      gabarit: 'validation_site',
+      clientId: client.id,
+    });
+  }
 
-  return { site, version, validation, urlTest, coutIa: genere.coutEuros };
+  return {
+    site,
+    version,
+    validation,
+    urlTest,
+    apercu: `/apercu/${site.id}`,
+    deploye: Boolean(urlTest),
+    coutIa: genere.coutEuros,
+  };
 }
 
 export interface ResultatProduction {
