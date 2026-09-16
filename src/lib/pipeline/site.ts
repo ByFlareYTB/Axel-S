@@ -90,6 +90,8 @@ export interface ResultatGeneration {
   apercu: string;
   deploye: boolean;
   coutIa: number;
+  /** Défauts constatés sur le site généré. Vide s'il est livrable tel quel. */
+  avertissements: string[];
 }
 
 /**
@@ -225,6 +227,7 @@ export async function genererEtDeployerTest(params: {
     apercu: `/apercu/${site.id}`,
     deploye: Boolean(urlTest),
     coutIa: genere.coutEuros,
+    avertissements: genere.avertissements,
   };
 }
 

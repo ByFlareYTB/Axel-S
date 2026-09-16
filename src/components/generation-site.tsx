@@ -27,6 +27,7 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
   const [retours, setRetours] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [apercu, setApercu] = useState<string | null>(null);
+  const [avertissements, setAvertissements] = useState<string[]>([]);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, demarrer] = useTransition();
 
@@ -39,6 +40,7 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
   async function appeler<T>(url: string, corps: Record<string, unknown>, succes: (donnees: T) => string) {
     setMessage(null);
     setErreur(null);
+    setAvertissements([]);
     const reponse = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -57,8 +59,15 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
     appeler(
       '/api/sites/generer',
       { clientId, siteId: siteId || undefined, nbPages, options, retours: retours || undefined },
-      (d: { urlTest: string | null; apercu: string; deploye: boolean; coutIa: number }) => {
+      (d: {
+        urlTest: string | null;
+        apercu: string;
+        deploye: boolean;
+        coutIa: number;
+        avertissements: string[];
+      }) => {
         setApercu(d.apercu);
+        setAvertissements(d.avertissements ?? []);
         return d.deploye
           ? `Site déployé en test : ${d.urlTest}. Email de validation envoyé au client. Coût IA ${d.coutIa.toFixed(2)} €.`
           : `Site généré (coût IA ${d.coutIa.toFixed(2)} €). Ouvrez l'aperçu ci-dessous. Rien n'a été envoyé au client : renseignez VERCEL_TOKEN pour déployer et demander la validation.`;
@@ -161,6 +170,14 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
       </div>
 
       {message && <p className="mt-3 text-sm text-emerald-700">{message}</p>}
+
+      {avertissements.length > 0 && (
+        <ul className="mt-3 space-y-1 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+          {avertissements.map((avertissement) => (
+            <li key={avertissement}>⚠️ {avertissement}</li>
+          ))}
+        </ul>
+      )}
 
       {apercu && (
         <a

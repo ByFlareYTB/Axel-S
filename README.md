@@ -60,7 +60,7 @@ Les données sont alors en mémoire et disparaissent au redémarrage.
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 91 tests
+npm test            # 103 tests
 npm run build       # build de production
 ```
 
@@ -230,6 +230,13 @@ analyse IA → génération (API Claude, prompt structuré par secteur)
 Chaque génération crée une version avec son coût IA réel, ce qui rend la
 restauration possible et la marge par site vérifiable.
 
+Les pages attendues sont **nommées explicitement** dans le prompt (accueil,
+services, à-propos, réalisations, contact…) et le site produit est **contrôlé**
+avant d'être livré : pages manquantes et liens de menu sans cible sont
+détectés. Une page absente déclenche un second appel ciblé sur elle seule ;
+ce qui subsiste est signalé en clair plutôt que livré en silence — un site dont
+le menu mène à des 404 n'est pas vendable.
+
 **La génération n'exige que la clé Anthropic.** L'hébergement est une étape
 distincte : sans jeton Vercel, le site est bien généré et consultable en
 **aperçu local** (`/apercu/<id>`), mais rien n'est envoyé au client — une
@@ -346,7 +353,7 @@ src/
 
 supabase/migrations/         schéma SQL complet + grille tarifaire
 scripts/                     migrations, hash de mot de passe, secret TOTP
-tests/                       91 tests Vitest
+tests/                       103 tests Vitest
 tooling/claude/              annexe Claude Code (voir plus bas)
 ```
 
@@ -384,7 +391,7 @@ affichée exacte quel que soit le modèle choisi.
 | `npm run dev` | serveur de développement |
 | `npm run build` / `npm start` | build et serveur de production |
 | `npm run typecheck` | vérification TypeScript stricte |
-| `npm test` | suite de tests Vitest (91 tests) |
+| `npm test` | suite de tests Vitest (103 tests) |
 | `npm run db:migrate` | applique les migrations SQL |
 | `node scripts/hash-password.mjs "…"` | hash scrypt du mot de passe |
 | `node scripts/totp-secret.mjs` | secret TOTP + URI `otpauth://` |
