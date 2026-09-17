@@ -60,7 +60,7 @@ Les données sont alors en mémoire et disparaissent au redémarrage.
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 117 tests
+npm test            # 118 tests
 npm run build       # build de production
 ```
 
@@ -326,6 +326,23 @@ Renseigner `AUTH_TOTP_SECRET` rend la 2FA obligatoire. Générez aussi un
 `SESSION_SECRET` aléatoire d'au moins 32 caractères — un bandeau rouge vous
 avertit tant que la valeur d'exemple est en place en production.
 
+### Héberger l'application
+
+Tant que l'application tourne sur votre machine, vos clients ne peuvent pas
+ouvrir leurs liens de validation. Pour la déployer :
+
+1. **PostgreSQL d'abord.** Sur Vercel, Netlify ou AWS Lambda, le système de
+   fichiers est éphémère : le stockage fichier y donne l'illusion de
+   fonctionner puis efface tout au déploiement suivant. L'application **refuse**
+   donc de démarrer sur ces plateformes sans `DATABASE_URL` — une comptabilité
+   perdue en silence serait pire qu'un refus.
+2. `npm run db:migrate` avec cette `DATABASE_URL`.
+3. Déployer, en renseignant toutes les variables dans les réglages de la
+   plateforme, `APP_BASE_URL` pointant sur l'adresse publique obtenue.
+
+`vercel.json` force la détection du framework : sans lui, Vercel prend le
+projet pour un site statique et cherche un dossier `public`.
+
 ### Joindre vos clients
 
 `APP_BASE_URL` est l'adresse à laquelle **vos clients** joignent l'application :
@@ -370,7 +387,7 @@ src/
 
 supabase/migrations/         schéma SQL complet + grille tarifaire
 scripts/                     migrations, hash de mot de passe, secret TOTP
-tests/                       117 tests Vitest
+tests/                       118 tests Vitest
 tooling/claude/              annexe Claude Code (voir plus bas)
 ```
 
@@ -408,7 +425,7 @@ affichée exacte quel que soit le modèle choisi.
 | `npm run dev` | serveur de développement |
 | `npm run build` / `npm start` | build et serveur de production |
 | `npm run typecheck` | vérification TypeScript stricte |
-| `npm test` | suite de tests Vitest (117 tests) |
+| `npm test` | suite de tests Vitest (118 tests) |
 | `npm run db:migrate` | applique les migrations SQL |
 | `node scripts/hash-password.mjs "…"` | hash scrypt du mot de passe |
 | `node scripts/totp-secret.mjs` | secret TOTP + URI `otpauth://` |

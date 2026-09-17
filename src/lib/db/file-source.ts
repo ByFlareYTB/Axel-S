@@ -21,6 +21,21 @@ type Row = Record<string, unknown>;
 type Contenu = Partial<Record<TableName, Row[]>>;
 
 /**
+ * Plateformes dont le système de fichiers est éphémère et non partagé entre
+ * instances : Vercel, AWS Lambda, Netlify.
+ *
+ * Y écrire des données donne l'illusion de fonctionner — les écritures
+ * réussissent — puis tout disparaît au redéploiement suivant ou sur une autre
+ * instance. Pour une comptabilité, c'est la pire panne possible : silencieuse.
+ */
+function plateformeEphemere(): string | null {
+  if (process.env.VERCEL) return 'Vercel';
+  if (process.env.AWS_LAMBDA_FUNCTION_NAME) return 'AWS Lambda';
+  if (process.env.NETLIFY) return 'Netlify';
+  return null;
+}
+
+/**
  * Le chemin est résolu à chaque appel, jamais figé au chargement du module :
  * cela évite une dépendance silencieuse à l'ordre des imports, et permet de
  * changer DATA_FILE sans redémarrer le processus.
@@ -42,6 +57,16 @@ const global_ = globalThis as unknown as {
 };
 
 function charger(): Map<TableName, Row[]> {
+  const plateforme = plateformeEphemere();
+  if (plateforme) {
+    throw new Error(
+      `Stockage fichier impossible sur ${plateforme} : son système de fichiers est éphémère, ` +
+        'vos clients, devis et factures seraient effacés au prochain déploiement. ' +
+        'Renseignez DATABASE_URL avec une base PostgreSQL (Supabase propose une offre gratuite), ' +
+        'puis lancez les migrations avec `npm run db:migrate`.',
+    );
+  }
+
   const fichier = chemin();
   const cache = global_.__siteforgeFichier;
   if (cache && cache.chemin === fichier) return cache.tables;

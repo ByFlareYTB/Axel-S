@@ -102,6 +102,27 @@ describe('stockage fichier de production', () => {
     expect(contenu.prospects).toHaveLength(0);
   });
 
+  it('refuse de servir de stockage sur une plateforme éphémère', async () => {
+    const { fileSource } = await chargerStore();
+
+    for (const [variable, nom] of [
+      ['VERCEL', 'Vercel'],
+      ['AWS_LAMBDA_FUNCTION_NAME', 'AWS Lambda'],
+      ['NETLIFY', 'Netlify'],
+    ] as const) {
+      delete (globalThis as { __siteforgeFichier?: unknown }).__siteforgeFichier;
+      process.env[variable] = '1';
+
+      // Écrire là-bas « marche » puis efface tout au déploiement suivant :
+      // mieux vaut refuser bruyamment que perdre une comptabilité en silence.
+      await expect(fileSource.list('clients')).rejects.toThrow(
+        new RegExp(`${nom}[\\s\\S]*DATABASE_URL`),
+      );
+
+      delete process.env[variable];
+    }
+  });
+
   it('ne laisse jamais de fichier temporaire derrière lui', async () => {
     const { fileSource, cheminFichierDonnees } = await chargerStore();
     await fileSource.insert('prospects', { raison_sociale: 'Test', statut: 'non_vu', score: 1 });
