@@ -60,7 +60,7 @@ Les données sont alors en mémoire et disparaissent au redémarrage.
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 125 tests
+npm test            # 125 tests (+12 sur PostgreSQL, voir ci-dessous)
 npm run build       # build de production
 ```
 
@@ -352,6 +352,19 @@ ouvrir leurs liens de validation. Pour la déployer :
 `vercel.json` force la détection du framework : sans lui, Vercel prend le
 projet pour un site statique et cherche un dossier `public`.
 
+### Tester contre PostgreSQL
+
+Douze tests couvrent l'adaptateur PostgreSQL — sérialisation `jsonb`, types
+énumérés, conversion des `numeric` que PostgreSQL renvoie en chaînes. Ils sont
+ignorés par défaut pour que la suite tourne sans infrastructure, et s'activent
+avec une base de test :
+
+```bash
+TEST_DATABASE_URL=postgresql://postgres@localhost:5432/siteforge_test npm test
+```
+
+La base doit avoir été migrée au préalable.
+
 ### Joindre vos clients
 
 `APP_BASE_URL` est l'adresse à laquelle **vos clients** joignent l'application :
@@ -396,7 +409,7 @@ src/
 
 supabase/migrations/         schéma SQL complet + grille tarifaire
 scripts/                     migrations, hash de mot de passe, secret TOTP
-tests/                       125 tests Vitest
+tests/                       125 tests Vitest (+12 sur PostgreSQL)
 tooling/claude/              annexe Claude Code (voir plus bas)
 ```
 
