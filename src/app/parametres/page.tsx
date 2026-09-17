@@ -4,6 +4,7 @@ import { config } from '@/lib/config';
 import { stockageActif } from '@/lib/db';
 import { cheminFichierDonnees } from '@/lib/db/file-source';
 import { diagnosticDelivrabilite } from '@/lib/integrations/delivrabilite';
+import { enregistrementsRequis, modeDns } from '@/lib/integrations/dns';
 import { etatCapacites } from '@/lib/integrations/prerequis';
 import { getOffresPromo, getParametres, getPricingRules } from '@/lib/repositories';
 
@@ -21,6 +22,9 @@ export default async function ParametresPage() {
 
   const delivrabilite = diagnosticDelivrabilite();
   const aCorriger = delivrabilite.filter((point) => !point.conforme);
+
+  const mode = modeDns();
+  const dns = enregistrementsRequis();
 
   return (
     <>
@@ -115,6 +119,67 @@ export default async function ParametresPage() {
             </li>
           ))}
         </ul>
+      </Carte>
+
+      <Carte className="mt-4">
+        <TitreSection
+          action={
+            <Badge ton={mode === 'aucun' ? 'alerte' : 'succes'}>
+              {mode === 'cloudflare' ? 'API Cloudflare' : mode === 'wildcard' ? 'Générique' : 'Non configuré'}
+            </Badge>
+          }
+        >
+          Sous-domaines des sites clients
+        </TitreSection>
+
+        {mode === 'cloudflare' && (
+          <p className="text-sm text-ardoise-500">
+            Chaque sous-domaine client est créé à la demande via l&apos;API Cloudflare.
+          </p>
+        )}
+
+        {mode === 'wildcard' && (
+          <p className="text-sm text-ardoise-500">
+            Un enregistrement générique publie d&apos;avance tout sous-domaine de{' '}
+            <code>{config.domaine.racine}</code>. Aucune API DNS n&apos;est nécessaire.
+          </p>
+        )}
+
+        {mode === 'aucun' && (
+          <>
+            <p className="text-sm text-ardoise-600">
+              Les sites mis en production resteront joignables sur leur URL d&apos;hébergement, pas
+              sur un sous-domaine de <code>{config.domaine.racine}</code>. Créez les
+              enregistrements ci-dessous chez votre registrar, une fois pour toutes, puis posez{' '}
+              <code>DNS_WILDCARD=true</code>.
+            </p>
+
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="text-ardoise-500">
+                  <tr>
+                    <th className="pb-1.5 pr-3 font-medium">Type</th>
+                    <th className="pb-1.5 pr-3 font-medium">Nom</th>
+                    <th className="pb-1.5 pr-3 font-medium">Valeur</th>
+                    <th className="pb-1.5 font-medium">Rôle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dns.map((e) => (
+                    <tr key={e.nom} className="border-t border-ardoise-100 align-top">
+                      <td className="py-1.5 pr-3 font-mono">{e.type}</td>
+                      <td className="py-1.5 pr-3 font-mono">{e.nom}</td>
+                      <td className="py-1.5 pr-3 font-mono">
+                        {e.valeur ?? <span className="font-sans text-ardoise-500">{e.ou}</span>}
+                      </td>
+                      <td className="py-1.5 text-ardoise-500">{e.role}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </Carte>
 
       <GrilleTarifaire

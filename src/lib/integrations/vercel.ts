@@ -65,9 +65,39 @@ export async function deployer(
 
 /** Rattache un domaine personnalisé au projet (bascule en production). */
 export async function ajouterDomaine(projetId: string, domaine: string): Promise<void> {
-  await requeteJson('Vercel', `${API}/v10/projects/${projetId}/domains${params()}`, {
-    method: 'POST',
-    headers: entetes(),
-    body: JSON.stringify({ name: domaine }),
-  });
+  try {
+    await requeteJson('Vercel', `${API}/v10/projects/${projetId}/domains${params()}`, {
+      method: 'POST',
+      headers: entetes(),
+      body: JSON.stringify({ name: domaine }),
+    });
+  } catch (err) {
+    // Un domaine déjà rattaché n'est pas une erreur : c'est le cas normal
+    // d'une remise en production du même site.
+    const message = err instanceof Error ? err.message : String(err);
+    if (!/domain_already_in_use|already exists|conflict/i.test(message)) throw err;
+  }
+}
+
+/**
+ * État réel d'un domaine rattaché au projet.
+ *
+ * Rattacher un domaine ne le rend pas joignable : tant que le DNS ne pointe
+ * pas vers l'hébergeur, Vercel le déclare non vérifié et ne délivre aucun
+ * certificat. Le distinguer évite d'annoncer au client un site en ligne qui
+ * ouvre sur une erreur.
+ */
+export async function etatDomaine(
+  projetId: string,
+  domaine: string,
+): Promise<{ verifie: boolean; raison: string | null }> {
+  const reponse = await requeteJson<{ verified?: boolean; verification?: { reason?: string }[] }>(
+    'Vercel',
+    `${API}/v9/projects/${projetId}/domains/${encodeURIComponent(domaine)}${params()}`,
+    { headers: entetes() },
+  );
+  return {
+    verifie: reponse.verified === true,
+    raison: reponse.verification?.[0]?.reason ?? null,
+  };
 }

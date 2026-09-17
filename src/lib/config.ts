@@ -62,10 +62,24 @@ export const config = {
 
   vercel: { token: env('VERCEL_TOKEN'), teamId: env('VERCEL_TEAM_ID') },
 
+  /**
+   * Domaine racine des sites clients, et façon dont leurs sous-domaines sont
+   * publiés.
+   *
+   * `wildcard` : un enregistrement générique `*.domaine` a été créé une fois
+   * chez le registrar. Chaque sous-domaine client résout alors tout seul, sans
+   * qu'aucune API DNS soit nécessaire — c'est le mode qui fonctionne partout,
+   * y compris chez un registrar sans API exploitable.
+   */
+  domaine: {
+    racine: env('ROOT_DOMAIN', env('CLOUDFLARE_ROOT_DOMAIN', 'siteforgeai.fr')),
+    wildcard: env('DNS_WILDCARD', 'false').toLowerCase() === 'true',
+  },
+
   cloudflare: {
     token: env('CLOUDFLARE_API_TOKEN'),
     zoneId: env('CLOUDFLARE_ZONE_ID'),
-    rootDomain: env('CLOUDFLARE_ROOT_DOMAIN', 'siteforgeai.fr'),
+    rootDomain: env('ROOT_DOMAIN', env('CLOUDFLARE_ROOT_DOMAIN', 'siteforgeai.fr')),
   },
 
   stripe: {

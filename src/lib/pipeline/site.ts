@@ -12,9 +12,10 @@ import { db } from '@/lib/db';
 import { alerter } from '@/lib/integrations/alertes';
 import { genererSite, genererSiteDemo, type BriefSite, type SiteGenere } from '@/lib/integrations/claude';
 import { creerCname, statutSsl } from '@/lib/integrations/cloudflare';
+import { modeDns, sousDomaineClient } from '@/lib/integrations/dns';
 import { envoyerEmail, gabaritValidation } from '@/lib/integrations/email';
 import { estDisponible, exigerCapacite } from '@/lib/integrations/prerequis';
-import { ajouterDomaine, creerProjet, deployer, type FichierDeploiement } from '@/lib/integrations/vercel';
+import { ajouterDomaine, etatDomaine, creerProjet, deployer, type FichierDeploiement } from '@/lib/integrations/vercel';
 import { notifier } from '@/lib/notifications';
 import { creerDevisDepuisSite, facturerDevis } from './facturation';
 import { enregistrerVersion, restaurerSauvegarde } from './sauvegarde';
@@ -428,6 +429,12 @@ export interface ResultatProduction {
   urlProduction: string;
   devis: Devis;
   facture: Facture;
+  /**
+   * Ce qui n'a pas pu être fait, sans pour autant empêcher la publication.
+   * Typiquement un domaine rattaché mais que l'hébergeur n'a pas encore
+   * vérifié : le site est en ligne, mais pas à l'adresse promise au client.
+   */
+  avertissements: string[];
 }
 
 /**
@@ -450,11 +457,12 @@ export async function mettreEnProduction(siteId: string, domaine?: string): Prom
   if (!version) throw new Error('Aucune version générée pour ce site.');
 
   const nomProjet = slugifier(`${client.raison_sociale}-${site.id.slice(0, 6)}`);
-  const sousDomaine = `${slugifier(client.raison_sociale)}.${config.cloudflare.rootDomain}`;
+  const sousDomaine = sousDomaineClient(slugifier(client.raison_sociale));
   const domaineFinal = domaine ?? sousDomaine;
 
   let urlProduction: string;
   let ssl = 'actif';
+  const avertissements: string[] = [];
 
   if (config.demo) {
     urlProduction = `https://${domaineFinal}`;
@@ -470,15 +478,40 @@ export async function mettreEnProduction(siteId: string, domaine?: string): Prom
 
     const hebergement = await db.findOne<HostingInstance>('hosting_instances', { site_id: site.id });
 
-    // Sans Cloudflare, le site reste en ligne sur son URL Vercel : on ne
-    // prétend pas avoir configuré un domaine qui ne l'est pas.
-    if (estDisponible('dns_ssl')) {
+    // Trois façons de publier le sous-domaine du client, selon ce qui est
+    // configuré. Aucune ne prétend avoir fait ce qu'elle n'a pas fait : sans
+    // DNS exploitable, le site reste sur son URL Vercel.
+    const mode = modeDns();
+
+    if (mode === 'cloudflare') {
       if (hebergement?.projet_externe_id) {
         await ajouterDomaine(hebergement.projet_externe_id, domaineFinal);
       }
       await creerCname(domaineFinal, new URL(deploiement.url).hostname);
       ssl = await statutSsl();
       urlProduction = `https://${domaineFinal}`;
+    } else if (mode === 'wildcard' && hebergement?.projet_externe_id) {
+      // L'enregistrement générique du domaine racine résout déjà ce nom : il
+      // ne reste qu'à l'apprendre à l'hébergeur. Aucune API DNS n'intervient.
+      await ajouterDomaine(hebergement.projet_externe_id, domaineFinal);
+
+      // Rattaché n'est pas joignable : tant que Vercel n'a pas vérifié le
+      // domaine, annoncer l'adresse au client l'enverrait sur une erreur.
+      const etat = await etatDomaine(hebergement.projet_externe_id, domaineFinal);
+      if (etat.verifie) {
+        ssl = 'actif';
+        urlProduction = `https://${domaineFinal}`;
+      } else {
+        ssl = 'en_attente_dns';
+        urlProduction = deploiement.url;
+        avertissements.push(
+          `Le domaine ${domaineFinal} est rattaché mais pas encore vérifié par Vercel` +
+            (etat.raison ? ` (${etat.raison})` : '') +
+            `. Le site reste joignable sur ${deploiement.url}. Vérifiez que l'enregistrement ` +
+            `générique « *.${config.domaine.racine} » existe bien chez votre registrar, puis ` +
+            'remettez le site en production.',
+        );
+      }
     } else {
       ssl = 'non_configure';
       urlProduction = deploiement.url;
@@ -523,14 +556,17 @@ export async function mettreEnProduction(siteId: string, domaine?: string): Prom
   await notifier({
     type: 'site_en_production',
     titre: `${client.raison_sociale} est en ligne`,
-    message: `Site publié sur ${urlProduction}. Devis ${devis.numero} et facture ${facture.numero} générés automatiquement.`,
+    message:
+      `Site publié sur ${urlProduction}. Devis ${devis.numero} et facture ${facture.numero} ` +
+      'générés automatiquement.' +
+      (avertissements.length > 0 ? ` ${avertissements[0]}` : ''),
     lien: `/clients/${client.id}`,
     clientId: client.id,
     siteId: site.id,
     urgent: true,
   });
 
-  return { site: siteMisAJour, urlProduction, devis, facture };
+  return { site: siteMisAJour, urlProduction, devis, facture, avertissements };
 }
 
 /** Réponse du client à l'email de validation. */
