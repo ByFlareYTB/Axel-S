@@ -9,12 +9,43 @@ import { PRIMARY_KEYS, coerceRow } from './schema';
 
 const globalPg = globalThis as unknown as { __siteforgeSql?: postgres.Sql };
 
+/**
+ * Vérifie la chaîne de connexion avant de s'en servir.
+ *
+ * Une URL mal formée ne produit pas d'erreur claire : postgres.js prend le nom
+ * d'utilisateur pour un nom de serveur et l'on obtient « ENOTFOUND postgres »,
+ * qui ne dit rien de ce qu'il faut corriger.
+ */
+function verifierUrl(url: string): void {
+  if (/\[.*\]/.test(url)) {
+    throw new Error(
+      'DATABASE_URL contient encore un espace réservé entre crochets. Remplacez ' +
+        '[YOUR-PASSWORD] par votre mot de passe, crochets compris, puis redémarrez.',
+    );
+  }
+
+  let analysee: URL;
+  try {
+    analysee = new URL(url);
+  } catch {
+    throw new Error("DATABASE_URL n'est pas une URL valide. Recopiez la chaîne complète depuis Supabase.");
+  }
+
+  if (!analysee.hostname || analysee.hostname === 'postgres') {
+    throw new Error(
+      `DATABASE_URL ne désigne aucun serveur valide (hôte lu : « ${analysee.hostname} »). ` +
+        'Recopiez la chaîne depuis Supabase : Project Settings → Database → Connection string → URI.',
+    );
+  }
+}
+
 function client(): postgres.Sql {
   if (!config.database.url) {
     throw new Error(
       'DATABASE_URL est requis quand DEMO_MODE=false. Renseignez-le ou repassez en mode démo.',
     );
   }
+  verifierUrl(config.database.url);
   if (!globalPg.__siteforgeSql) {
     globalPg.__siteforgeSql = postgres(config.database.url, {
       max: 5,

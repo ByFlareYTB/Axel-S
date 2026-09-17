@@ -1,19 +1,27 @@
 #!/usr/bin/env node
 /**
  * Applique les migrations SQL de supabase/migrations dans l'ordre alphabétique.
- * Usage : DATABASE_URL=postgres://... node scripts/migrate.mjs
+ *
+ * Usage : npm run db:migrate
+ * DATABASE_URL est lu depuis .env.local, ou depuis l'environnement du shell.
  */
 import { readdir, readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
+import { chargerEnvironnement, verifierUrlBase } from './env.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dir = join(root, 'supabase', 'migrations');
 
+// Node ne lit aucun fichier .env de lui-même : sans cela, le script ne verrait
+// pas la configuration que l'application utilise pourtant déjà.
+chargerEnvironnement();
+
 const url = process.env.DATABASE_URL;
-if (!url) {
-  console.error('DATABASE_URL manquant. Exemple : DATABASE_URL=postgres://... npm run db:migrate');
+const probleme = verifierUrlBase(url);
+if (probleme) {
+  console.error(probleme);
   process.exit(1);
 }
 
@@ -40,7 +48,7 @@ try {
     });
     console.log(`✓ ${file}`);
   }
-  console.log('Migrations terminées.');
+  console.log(`Migrations terminées sur ${new URL(url).hostname}.`);
 } catch (err) {
   console.error('Échec des migrations :', err.message);
   process.exitCode = 1;

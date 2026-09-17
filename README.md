@@ -60,7 +60,7 @@ Les données sont alors en mémoire et disparaissent au redémarrage.
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 118 tests
+npm test            # 125 tests
 npm run build       # build de production
 ```
 
@@ -288,10 +288,16 @@ L'adaptateur est choisi à un seul endroit (`src/lib/db/index.ts`) :
 Le fichier local contient votre comptabilité et vos identifiants : sauvegardez-le
 comme tel. Pour passer sur PostgreSQL :
 
+Renseignez `DATABASE_URL` dans `.env.local`, puis :
+
 ```bash
-export DATABASE_URL="postgresql://…"
 npm run db:migrate
 ```
+
+La chaîne se copie depuis Supabase : **Project Settings → Database →
+Connection string → URI**. Remplacez `[YOUR-PASSWORD]` par votre mot de passe,
+crochets compris — les laisser produit une erreur de résolution DNS
+incompréhensible, que l'application intercepte désormais pour vous le dire.
 
 Les migrations sont idempotentes et suivies dans une table `_migrations`.
 
@@ -387,7 +393,7 @@ src/
 
 supabase/migrations/         schéma SQL complet + grille tarifaire
 scripts/                     migrations, hash de mot de passe, secret TOTP
-tests/                       118 tests Vitest
+tests/                       125 tests Vitest
 tooling/claude/              annexe Claude Code (voir plus bas)
 ```
 
@@ -425,7 +431,7 @@ affichée exacte quel que soit le modèle choisi.
 | `npm run dev` | serveur de développement |
 | `npm run build` / `npm start` | build et serveur de production |
 | `npm run typecheck` | vérification TypeScript stricte |
-| `npm test` | suite de tests Vitest (118 tests) |
+| `npm test` | suite de tests Vitest (125 tests) |
 | `npm run db:migrate` | applique les migrations SQL |
 | `node scripts/hash-password.mjs "…"` | hash scrypt du mot de passe |
 | `node scripts/totp-secret.mjs` | secret TOTP + URI `otpauth://` |
