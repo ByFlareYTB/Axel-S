@@ -3,6 +3,7 @@ import { GrilleTarifaire } from '@/components/grille-tarifaire';
 import { config } from '@/lib/config';
 import { stockageActif } from '@/lib/db';
 import { cheminFichierDonnees } from '@/lib/db/file-source';
+import { diagnosticDelivrabilite } from '@/lib/integrations/delivrabilite';
 import { etatCapacites } from '@/lib/integrations/prerequis';
 import { getOffresPromo, getParametres, getPricingRules } from '@/lib/repositories';
 
@@ -17,6 +18,9 @@ export default async function ParametresPage() {
 
   const capacites = etatCapacites();
   const indisponibles = capacites.filter((c) => !c.disponible);
+
+  const delivrabilite = diagnosticDelivrabilite();
+  const aCorriger = delivrabilite.filter((point) => !point.conforme);
 
   return (
     <>
@@ -75,6 +79,42 @@ export default async function ParametresPage() {
             Redémarrez l&apos;application après modification.
           </p>
         </div>
+      </Carte>
+
+
+      <Carte className="mt-4">
+        <TitreSection
+          action={
+            <Badge ton={aCorriger.length === 0 ? 'succes' : 'alerte'}>
+              {delivrabilite.length - aCorriger.length}/{delivrabilite.length} conformes
+            </Badge>
+          }
+        >
+          Délivrabilité des emails
+        </TitreSection>
+
+        <p className="mb-3 text-sm text-ardoise-500">
+          Un envoi accepté par le fournisseur n&apos;est pas un envoi lu. Ces trois points
+          décident du classement en indésirables.
+        </p>
+
+        <ul className="space-y-2.5">
+          {delivrabilite.map((point) => (
+            <li key={point.code} className="border-b border-ardoise-100 pb-2.5 last:border-0 last:pb-0">
+              <span className="text-sm font-medium">
+                {point.conforme ? '✅' : '⚠️'} {point.libelle}
+              </span>
+              {!point.conforme && (
+                <>
+                  <p className="mt-1 text-xs text-ardoise-600">{point.consequence}</p>
+                  <p className="mt-1 text-xs text-ardoise-500">
+                    <strong>À faire :</strong> {point.correction}
+                  </p>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
       </Carte>
 
       <GrilleTarifaire

@@ -44,7 +44,54 @@ function piedRgpd(token: string): string {
   ].join('');
 }
 
-async function envoyerViaResend(envoi: EnvoiEmail, html: string): Promise<string> {
+/**
+ * Version texte du message, envoyée en parallèle du HTML.
+ *
+ * Un email composé uniquement de HTML est un signal de spam classique : les
+ * messages légitimes proposent toujours les deux versions. Les liens sont
+ * conservés en clair, sans quoi la version texte serait inutilisable.
+ */
+export function texteDepuisHtml(html: string): string {
+  return html
+    .replace(/<hr[^>]*>/gi, '\n----------\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
+    .replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, (_m, lien, texte) => {
+      const libelle = texte.replace(/<[^>]+>/g, '').trim();
+      return libelle && libelle !== lien ? `${libelle} : ${lien}` : lien;
+    })
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .split('\n')
+    .map((ligne) => ligne.trim())
+    .join('\n')
+    .trim();
+}
+
+/**
+ * En-têtes de désinscription normalisés (RFC 2369 et RFC 8058).
+ *
+ * Gmail et Outlook les exigent désormais des expéditeurs réguliers : ils
+ * affichent le bouton « Se désabonner » natif, et leur absence compte comme un
+ * manquement dans le calcul de réputation. `One-Click` engage l'application à
+ * traiter une requête POST sans confirmation humaine — c'est ce que fait la
+ * route /api/desinscription/[token].
+ */
+export function enTetesDesinscription(token: string): Record<string, string> {
+  return {
+    'List-Unsubscribe': `<${config.appBaseUrl}/api/desinscription/${token}>, <mailto:${config.entreprise.email}?subject=desinscription>`,
+    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+  };
+}
+
+async function envoyerViaResend(envoi: EnvoiEmail, html: string, token: string): Promise<string> {
   try {
     const reponse = await requeteJson<{ id: string }>('Resend', 'https://api.resend.com/emails', {
       method: 'POST',
@@ -55,8 +102,11 @@ async function envoyerViaResend(envoi: EnvoiEmail, html: string): Promise<string
       body: JSON.stringify({
         from: config.email.from,
         to: [envoi.destinataire],
+        reply_to: config.entreprise.email,
         subject: envoi.sujet,
         html,
+        text: texteDepuisHtml(html),
+        headers: enTetesDesinscription(token),
       }),
     });
     return reponse.id;
@@ -101,7 +151,7 @@ function traduireErreurResend(err: unknown, destinataire: string): Error {
   return new Error(`Envoi refusé par Resend : ${brut}`);
 }
 
-async function envoyerViaBrevo(envoi: EnvoiEmail, html: string): Promise<string> {
+async function envoyerViaBrevo(envoi: EnvoiEmail, html: string, token: string): Promise<string> {
   const correspondance = config.email.from.match(/^(.*?)\s*<(.+)>$/);
   const reponse = await requeteJson<{ messageId: string }>('Brevo', 'https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
@@ -109,8 +159,11 @@ async function envoyerViaBrevo(envoi: EnvoiEmail, html: string): Promise<string>
     body: JSON.stringify({
       sender: { name: correspondance?.[1] ?? config.entreprise.nom, email: correspondance?.[2] ?? config.entreprise.email },
       to: [{ email: envoi.destinataire }],
+      replyTo: { email: config.entreprise.email },
       subject: envoi.sujet,
       htmlContent: html,
+      textContent: texteDepuisHtml(html),
+      headers: enTetesDesinscription(token),
     }),
   });
   return reponse.messageId;
@@ -133,8 +186,8 @@ export async function envoyerEmail(envoi: EnvoiEmail): Promise<{ id: string; pro
   if (!config.demo) {
     providerId =
       config.email.provider === 'brevo'
-        ? await envoyerViaBrevo(envoi, html)
-        : await envoyerViaResend(envoi, html);
+        ? await envoyerViaBrevo(envoi, html, token)
+        : await envoyerViaResend(envoi, html, token);
   }
 
   const journal = await db.insert<{ id: string }>('emails_envoyes', {
