@@ -115,3 +115,20 @@ describe('en-têtes de désinscription', () => {
     expect(entetes['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
   });
 });
+
+describe('accès aux routes de désinscription', () => {
+  it('laisse passer le bouton de désabonnement des clients de messagerie', async () => {
+    // Gmail appelle cette route en POST, sans cookie : protégée, elle
+    // renverrait 401 et l'en-tête List-Unsubscribe promettrait dans le vide.
+    const { estPublic } = await import('@/middleware');
+    expect(estPublic('/api/desinscription/jeton-123')).toBe(true);
+    expect(estPublic('/desinscription/jeton-123')).toBe(true);
+  });
+
+  it('protège toujours le reste de l’API', async () => {
+    const { estPublic } = await import('@/middleware');
+    for (const chemin of ['/api/clients', '/api/sites/generer', '/clients', '/parametres']) {
+      expect(estPublic(chemin)).toBe(false);
+    }
+  });
+});
