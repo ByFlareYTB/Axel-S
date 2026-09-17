@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "db:migrate": "node scripts/migrate.mjs",
     "db:check": "node scripts/check-db.mjs",
+    "dns:check": "node scripts/check-dns.mjs",
     "deploy:check": "node scripts/check-prod.mjs"
   },
   "dependencies": {
