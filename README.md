@@ -294,6 +294,9 @@ Renseignez `DATABASE_URL` dans `.env.local`, puis :
 npm run db:migrate
 ```
 
+En cas de doute, `npm run db:check` montre comment la chaîne est réellement
+interprétée — serveur, port, base — et tente la connexion.
+
 La chaîne se copie depuis Supabase : **Project Settings → Database →
 Connection string → URI**. Remplacez `[YOUR-PASSWORD]` par votre mot de passe,
 crochets compris — les laisser produit une erreur de résolution DNS
@@ -432,6 +435,7 @@ affichée exacte quel que soit le modèle choisi.
 | `npm run build` / `npm start` | build et serveur de production |
 | `npm run typecheck` | vérification TypeScript stricte |
 | `npm test` | suite de tests Vitest (125 tests) |
+| `npm run db:check` | diagnostique la connexion à la base, mot de passe masqué |
 | `npm run db:migrate` | applique les migrations SQL |
 | `node scripts/hash-password.mjs "…"` | hash scrypt du mot de passe |
 | `node scripts/totp-secret.mjs` | secret TOTP + URI `otpauth://` |
