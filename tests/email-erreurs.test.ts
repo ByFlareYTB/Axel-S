@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoSource } from '@/lib/db/demo-source';
 
 vi.mock('@/lib/db', async () => {
@@ -93,5 +93,42 @@ describe('refus de Resend traduits en consignes', () => {
 
     // Obligation RGPD : aucun appel n'a été tenté.
     expect(requeteJson).not.toHaveBeenCalled();
+  });
+});
+
+describe('application joignable seulement en local', () => {
+  const ENV_INITIAL = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...ENV_INITIAL };
+  });
+
+  it('reconnaît les adresses locales sous toutes leurs formes', async () => {
+    const { applicationLocaleUniquement } = await import('@/lib/config');
+
+    for (const url of [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://0.0.0.0:3000',
+      'https://localhost',
+    ]) {
+      process.env.APP_BASE_URL = url;
+      expect(applicationLocaleUniquement()).toBe(true);
+    }
+  });
+
+  it('considère une vraie adresse publique comme joignable', async () => {
+    const { applicationLocaleUniquement } = await import('@/lib/config');
+
+    for (const url of ['https://siteforge.fr', 'https://app.siteforge.fr/']) {
+      process.env.APP_BASE_URL = url;
+      expect(applicationLocaleUniquement()).toBe(false);
+    }
+  });
+
+  it('ne se laisse pas tromper par un domaine qui contient « localhost »', async () => {
+    const { applicationLocaleUniquement } = await import('@/lib/config');
+    process.env.APP_BASE_URL = 'https://localhost-hebergement.fr';
+    expect(applicationLocaleUniquement()).toBe(false);
   });
 });

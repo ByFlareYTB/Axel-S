@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { randomUUID } from 'node:crypto';
-import { config } from '@/lib/config';
+import { applicationLocaleUniquement, config } from '@/lib/config';
 import { db } from '@/lib/db';
 import { alerter } from '@/lib/integrations/alertes';
 import { genererSite, genererSiteDemo, type BriefSite, type SiteGenere } from '@/lib/integrations/claude';
@@ -294,6 +294,9 @@ export async function genererEtDeployerTest(params: {
   if (urlTest) {
     try {
       demande = await demanderValidation(site, client, version.version, urlTest);
+      if (demande.emailEnvoye && applicationLocaleUniquement()) {
+        avertissements.push(avertissementLocalhost(client.email));
+      }
       if (demande.raisonNonEnvoye) {
         avertissements.push(
           `L’email de validation n’est pas parti : ${demande.raisonNonEnvoye} ` +
@@ -324,6 +327,19 @@ export async function genererEtDeployerTest(params: {
 /** Message lisible d'une exception, pour l'insérer dans un avertissement. */
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Un email parti avec des liens en localhost est pire qu'un email non parti :
+ * le client le reçoit, clique, et tombe sur rien — sans que rien ne signale
+ * l'anomalie de votre côté.
+ */
+function avertissementLocalhost(destinataire: string): string {
+  return (
+    `Email envoyé à ${destinataire}, mais les boutons de validation pointent vers ` +
+    `${config.appBaseUrl} — une adresse qui n'existe que sur votre machine. ` +
+    'Pour un vrai client, hébergez l’application et renseignez APP_BASE_URL avec son adresse publique.'
+  );
 }
 
 

@@ -104,6 +104,18 @@ export function euros(montant: number, decimales = 2): string {
   }).format(montant);
 }
 
+/**
+ * Vrai quand l'application n'est joignable que depuis la machine qui l'exécute.
+ *
+ * Décisif pour les emails : un lien de validation en localhost ouvre la machine
+ * du destinataire, pas la vôtre. Il est donc mort pour tout client réel, alors
+ * même que l'email part correctement.
+ */
+export function applicationLocaleUniquement(): boolean {
+  const url = process.env.APP_BASE_URL?.trim() || 'http://localhost:3000';
+  return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:|\/|$)/i.test(url);
+}
+
 export function dateFr(value: string | Date | null | undefined): string {
   if (!value) return '—';
   const d = typeof value === 'string' ? new Date(value) : value;

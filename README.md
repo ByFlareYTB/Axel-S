@@ -60,7 +60,7 @@ Les données sont alors en mémoire et disparaissent au redémarrage.
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 114 tests
+npm test            # 117 tests
 npm run build       # build de production
 ```
 
@@ -326,6 +326,14 @@ Renseigner `AUTH_TOTP_SECRET` rend la 2FA obligatoire. Générez aussi un
 `SESSION_SECRET` aléatoire d'au moins 32 caractères — un bandeau rouge vous
 avertit tant que la valeur d'exemple est en place en production.
 
+### Joindre vos clients
+
+`APP_BASE_URL` est l'adresse à laquelle **vos clients** joignent l'application :
+les liens de validation des sites en sont construits. Tant qu'elle vaut
+`localhost`, ces liens ne fonctionnent que sur votre machine — l'application
+vous en avertit à chaque envoi. Pour travailler avec de vrais clients,
+hébergez l'application et renseignez son adresse publique.
+
 ### Webhook Stripe
 
 Pointez-le sur `POST /api/stripe/webhook` et renseignez `STRIPE_WEBHOOK_SECRET`.
@@ -362,7 +370,7 @@ src/
 
 supabase/migrations/         schéma SQL complet + grille tarifaire
 scripts/                     migrations, hash de mot de passe, secret TOTP
-tests/                       114 tests Vitest
+tests/                       117 tests Vitest
 tooling/claude/              annexe Claude Code (voir plus bas)
 ```
 
@@ -400,7 +408,7 @@ affichée exacte quel que soit le modèle choisi.
 | `npm run dev` | serveur de développement |
 | `npm run build` / `npm start` | build et serveur de production |
 | `npm run typecheck` | vérification TypeScript stricte |
-| `npm test` | suite de tests Vitest (114 tests) |
+| `npm test` | suite de tests Vitest (117 tests) |
 | `npm run db:migrate` | applique les migrations SQL |
 | `node scripts/hash-password.mjs "…"` | hash scrypt du mot de passe |
 | `node scripts/totp-secret.mjs` | secret TOTP + URI `otpauth://` |
