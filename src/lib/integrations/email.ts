@@ -45,20 +45,60 @@ function piedRgpd(token: string): string {
 }
 
 async function envoyerViaResend(envoi: EnvoiEmail, html: string): Promise<string> {
-  const reponse = await requeteJson<{ id: string }>('Resend', 'https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${config.email.resendKey}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: config.email.from,
-      to: [envoi.destinataire],
-      subject: envoi.sujet,
-      html,
-    }),
-  });
-  return reponse.id;
+  try {
+    const reponse = await requeteJson<{ id: string }>('Resend', 'https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${config.email.resendKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: config.email.from,
+        to: [envoi.destinataire],
+        subject: envoi.sujet,
+        html,
+      }),
+    });
+    return reponse.id;
+  } catch (err) {
+    throw traduireErreurResend(err, envoi.destinataire);
+  }
+}
+
+/**
+ * Traduit les refus de Resend en consignes.
+ *
+ * Les deux premiers cas sont les plus fréquents au démarrage, et leur message
+ * d'origine — en anglais, noyé dans du JSON — n'aide pas à comprendre qu'il
+ * s'agit d'une protection anti-spam et non d'une panne.
+ */
+function traduireErreurResend(err: unknown, destinataire: string): Error {
+  const brut = err instanceof Error ? err.message : String(err);
+
+  if (brut.includes('only send testing emails to your own email')) {
+    return new Error(
+      `Resend refuse d'écrire à ${destinataire} : tant qu'aucun domaine n'est vérifié, ` +
+        "l'expéditeur de test n'écrit qu'à l'adresse du compte Resend. " +
+        'Utilisez cette adresse comme email du client pour vos essais, ou vérifiez votre ' +
+        'domaine sur resend.com/domains pour écrire à de vrais prospects.',
+    );
+  }
+
+  if (brut.includes('domain is not verified') || brut.includes('not verified')) {
+    return new Error(
+      `Le domaine de l'expéditeur « ${config.email.from} » n'est pas vérifié chez Resend. ` +
+        'Ajoutez-le sur resend.com/domains et publiez les enregistrements DNS demandés, ' +
+        "ou repassez EMAIL_FROM sur l'expéditeur de test onboarding@resend.dev.",
+    );
+  }
+
+  if (brut.includes('401') || brut.toLowerCase().includes('unauthorized')) {
+    return new Error(
+      'Clé Resend refusée. Vérifiez RESEND_API_KEY dans .env.local, puis redémarrez.',
+    );
+  }
+
+  return new Error(`Envoi refusé par Resend : ${brut}`);
 }
 
 async function envoyerViaBrevo(envoi: EnvoiEmail, html: string): Promise<string> {

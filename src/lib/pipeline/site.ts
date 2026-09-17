@@ -122,8 +122,15 @@ export interface DemandeValidation {
   validation: ValidationClient;
   /** Page que le client doit ouvrir pour répondre. */
   lien: string;
-  /** Faux quand l'emailing n'est pas configuré : à vous de transmettre le lien. */
   emailEnvoye: boolean;
+  /**
+   * Pourquoi l'email n'est pas parti, quand il n'est pas parti.
+   *
+   * Un envoi silencieusement raté est pire qu'un envoi raté : sans cette
+   * raison, on croit l'emailing mal configuré alors qu'il refuse simplement
+   * le destinataire.
+   */
+  raisonNonEnvoye: string | null;
 }
 
 /**
@@ -153,11 +160,18 @@ async function demanderValidation(
 
   const lien = `${config.appBaseUrl}/validation/${token}`;
   if (!config.demo && !estDisponible('emailing')) {
-    return { validation, lien, emailEnvoye: false };
+    return {
+      validation,
+      lien,
+      emailEnvoye: false,
+      raisonNonEnvoye:
+        "Aucun fournisseur d'emailing configuré (RESEND_API_KEY absente).",
+    };
   }
 
   // L'envoi peut échouer pour mille raisons hors de notre contrôle. La demande
-  // reste valable : son lien est renvoyé pour être transmis à la main.
+  // reste valable : son lien est renvoyé pour être transmis à la main, et la
+  // raison remonte telle quelle — c'est elle qui dit quoi corriger.
   try {
     const gabarit = gabaritValidation({ raisonSociale: client.raison_sociale, urlTest, token });
     await envoyerEmail({
@@ -167,10 +181,10 @@ async function demanderValidation(
       gabarit: 'validation_site',
       clientId: client.id,
     });
-    return { validation, lien, emailEnvoye: true };
+    return { validation, lien, emailEnvoye: true, raisonNonEnvoye: null };
   } catch (err) {
     console.warn('[validation] envoi impossible :', err);
-    return { validation, lien, emailEnvoye: false };
+    return { validation, lien, emailEnvoye: false, raisonNonEnvoye: message(err) };
   }
 }
 
@@ -280,9 +294,15 @@ export async function genererEtDeployerTest(params: {
   if (urlTest) {
     try {
       demande = await demanderValidation(site, client, version.version, urlTest);
+      if (demande.raisonNonEnvoye) {
+        avertissements.push(
+          `L’email de validation n’est pas parti : ${demande.raisonNonEnvoye} ` +
+            `Transmettez ce lien au client : ${demande.lien}`,
+        );
+      }
     } catch (err) {
       avertissements.push(
-        `Site en ligne, mais la demande de validation n’a pas pu partir : ${message(err)}`,
+        `Site en ligne, mais la demande de validation n’a pas pu être créée : ${message(err)}`,
       );
     }
   }
@@ -313,6 +333,8 @@ export interface ResultatDeploiement {
   validation: ValidationClient | null;
   lienValidation: string | null;
   emailEnvoye: boolean;
+  /** Pourquoi l'email n'est pas parti, quand il n'est pas parti. */
+  raisonNonEnvoye: string | null;
 }
 
 /**
@@ -369,7 +391,7 @@ export async function deployerEnTest(siteId: string): Promise<ResultatDeploiemen
     titre: `${misAJour.nom} déployé en test`,
     message: demande.emailEnvoye
       ? `Version ${version.version} en ligne sur ${urlTest}. Demande de validation envoyée à ${client.email}.`
-      : `Version ${version.version} en ligne sur ${urlTest}. Emailing non configuré : transmettez vous-même le lien de validation.`,
+      : `Version ${version.version} en ligne sur ${urlTest}. Email non parti (${demande.raisonNonEnvoye}) : transmettez vous-même le lien de validation.`,
     lien: `/clients/${client.id}`,
     clientId: client.id,
     siteId: site.id,
@@ -381,6 +403,7 @@ export async function deployerEnTest(siteId: string): Promise<ResultatDeploiemen
     validation: demande.validation,
     lienValidation: demande.lien,
     emailEnvoye: demande.emailEnvoye,
+    raisonNonEnvoye: demande.raisonNonEnvoye,
   };
 }
 

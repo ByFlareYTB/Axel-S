@@ -78,7 +78,7 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
         if (d.emailEnvoye) {
           return `Site en ligne : ${d.urlTest}. Demande de validation envoyée au client. ${cout}`;
         }
-        return `Site en ligne : ${d.urlTest}. ${cout} Emailing non configuré — transmettez ce lien au client : ${d.lienValidation}`;
+        return `Site en ligne : ${d.urlTest}. ${cout} Transmettez ce lien au client : ${d.lienValidation}`;
       },
     );
 
@@ -86,10 +86,20 @@ export function GenerationSite({ clientId, sites }: { clientId: string; sites: S
     appeler(
       '/api/sites/deployer',
       { siteId },
-      (d: { urlTest: string; emailEnvoye: boolean; lienValidation: string }) =>
-        d.emailEnvoye
-          ? `Site en ligne : ${d.urlTest}. Demande de validation envoyée au client.`
-          : `Site en ligne : ${d.urlTest}. Emailing non configuré — transmettez ce lien au client : ${d.lienValidation}`,
+      (d: {
+        urlTest: string;
+        emailEnvoye: boolean;
+        lienValidation: string;
+        raisonNonEnvoye: string | null;
+      }) => {
+        if (d.emailEnvoye) {
+          return `Site en ligne : ${d.urlTest}. Demande de validation envoyée au client.`;
+        }
+        setAvertissements(
+          d.raisonNonEnvoye ? [`L'email de validation n'est pas parti : ${d.raisonNonEnvoye}`] : [],
+        );
+        return `Site en ligne : ${d.urlTest}. Transmettez ce lien au client : ${d.lienValidation}`;
+      },
     );
 
   const mettreEnProduction = () =>
