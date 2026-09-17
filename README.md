@@ -328,7 +328,7 @@ déploiement en ligne, préférez les variables d'environnement, qui ont priorit
 
 ```bash
 node scripts/hash-password.mjs "votreMotDePasse"   # → AUTH_PASSWORD_HASH=…
-node scripts/totp-secret.mjs contact@siteforge.ai  # → AUTH_TOTP_SECRET=… + QR otpauth://
+node scripts/totp-secret.mjs contact@siteforgeai.fr  # → AUTH_TOTP_SECRET=… + QR otpauth://
 ```
 
 Renseigner `AUTH_TOTP_SECRET` rend la 2FA obligatoire. Générez aussi un

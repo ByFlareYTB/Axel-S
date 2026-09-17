@@ -26,7 +26,7 @@ export const config = {
     exploitant: env('ENTREPRISE_EXPLOITANT', 'Axel S.'),
     siren: env('SIREN', '000000000'),
     adresse: env('ENTREPRISE_ADRESSE', '37260 Monts, Centre-Val de Loire, France'),
-    email: env('ENTREPRISE_EMAIL', 'contact@siteforge.ai'),
+    email: env('ENTREPRISE_EMAIL', 'contact@siteforgeai.fr'),
     telephone: env('ENTREPRISE_TELEPHONE', ''),
     // Microentreprise : franchise en base de TVA.
     mentionTva: 'TVA non applicable, art. 293 B du CGI',
@@ -36,7 +36,7 @@ export const config = {
   },
 
   auth: {
-    email: env('AUTH_EMAIL', 'contact@siteforge.ai'),
+    email: env('AUTH_EMAIL', 'contact@siteforgeai.fr'),
     passwordHash: env('AUTH_PASSWORD_HASH'),
     totpSecret: env('AUTH_TOTP_SECRET'),
     sessionSecret: env('SESSION_SECRET', 'dev-session-secret-change-me-please-32chars'),
@@ -65,7 +65,7 @@ export const config = {
   cloudflare: {
     token: env('CLOUDFLARE_API_TOKEN'),
     zoneId: env('CLOUDFLARE_ZONE_ID'),
-    rootDomain: env('CLOUDFLARE_ROOT_DOMAIN', 'siteforge.ai'),
+    rootDomain: env('CLOUDFLARE_ROOT_DOMAIN', 'siteforgeai.fr'),
   },
 
   stripe: {
@@ -77,7 +77,7 @@ export const config = {
     provider: env('EMAIL_PROVIDER', 'resend') as 'resend' | 'brevo',
     resendKey: env('RESEND_API_KEY'),
     brevoKey: env('BREVO_API_KEY'),
-    from: env('EMAIL_FROM', 'SiteForge AI <contact@siteforge.ai>'),
+    from: env('EMAIL_FROM', 'SiteForge AI <contact@siteforgeai.fr>'),
   },
 
   ads: {

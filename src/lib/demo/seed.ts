@@ -334,7 +334,7 @@ export function buildDemoData(): Partial<Record<TableName, Row[]>> {
       plateforme: 'vercel',
       projet_externe_id: `prj_demo_${i + 1}`,
       domaine: site.url_production?.replace('https://', '') ?? null,
-      sous_domaine: `${site.nom.toLowerCase().replace(/[^a-z]+/g, '-')}.siteforge.ai`,
+      sous_domaine: `${site.nom.toLowerCase().replace(/[^a-z]+/g, '-')}.siteforgeai.fr`,
       statut_ssl: site.url_production ? 'actif' : 'en_attente',
       dns_configure: Boolean(site.url_production),
       cout_mensuel_reel: 0.38 + i * 0.07,
