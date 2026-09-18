@@ -11,10 +11,24 @@
 import { Resolver } from 'node:dns/promises';
 import { chargerEnvironnement } from './env.mjs';
 import { ERRONE, MANQUANT, interpreter } from './dns-verif.mjs';
+import { DOMAINE_EXEMPLE } from './prod.mjs';
 
 chargerEnvironnement();
 
+// D'où vient la valeur : un contrôle mené sur le mauvais domaine produit un
+// rapport parfaitement cohérent et entièrement hors sujet.
+const source = process.env.ROOT_DOMAIN ? 'ROOT_DOMAIN' : 'CLOUDFLARE_ROOT_DOMAIN';
 const racine = (process.env.ROOT_DOMAIN || process.env.CLOUDFLARE_ROOT_DOMAIN || '').trim();
+
+if (racine === DOMAINE_EXEMPLE) {
+  console.error(
+    `\n« ${DOMAINE_EXEMPLE} » est le domaine d'exemple de .env.example, pas le vôtre :\n` +
+      "il appartient à un tiers, et contrôler sa zone n'apprend rien sur la vôtre.\n\n" +
+      `Remplacez ${source} dans .env.local par votre domaine :\n` +
+      '  ROOT_DOMAIN=mondomaine.fr\n',
+  );
+  process.exit(1);
+}
 
 if (!racine) {
   console.error(
@@ -73,7 +87,7 @@ function nommerHebergeur(liste) {
 
 const resultats = interpreter(lectures, racine);
 
-console.log(`\nEnregistrements DNS de ${racine}\n`);
+console.log(`\nEnregistrements DNS de ${racine}  (lu dans ${source})\n`);
 
 if (serveurs.length > 0) {
   console.log('  Serveurs de noms faisant autorité :');

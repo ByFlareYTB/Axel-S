@@ -13,6 +13,15 @@
 /** Valeur d'exemple du fichier .env.example — à ne jamais retrouver en ligne. */
 export const SECRET_EXEMPLE = 'dev-session-secret-change-me-please-32chars';
 
+/**
+ * Domaine d'exemple du fichier .env.example.
+ *
+ * Il appartient à un tiers. Laissé en place, il ferait viser à l'application
+ * un domaine qui n'est pas le vôtre : les sous-domaines clients seraient
+ * annoncés sur une zone que vous ne contrôlez pas.
+ */
+export const DOMAINE_EXEMPLE = 'siteforge.ai';
+
 /** Domaines d'expédition partagés des fournisseurs d'emailing. */
 const DOMAINES_PARTAGES = ['resend.dev', 'sendinblue.com', 'brevo.com'];
 
@@ -129,6 +138,25 @@ export function verifierProduction(env) {
       'RESEND_API_KEY',
       "L'envoi d'emails sera indisponible : ni prospection, ni demande de validation.",
       'resend.com → API Keys.',
+    );
+  }
+
+  const domaineRacine = lire('ROOT_DOMAIN') || lire('CLOUDFLARE_ROOT_DOMAIN');
+  if (!domaineRacine) {
+    ajouter(
+      AVERTISSEMENT,
+      'ROOT_DOMAIN',
+      "Le domaine racine des sous-domaines clients n'est pas renseigné.",
+      'Renseignez votre domaine, par exemple ROOT_DOMAIN=mondomaine.fr.',
+    );
+  } else if (domaineRacine === DOMAINE_EXEMPLE) {
+    ajouter(
+      AVERTISSEMENT,
+      'ROOT_DOMAIN',
+      `« ${DOMAINE_EXEMPLE} » est le domaine d'exemple du fichier .env.example, et il ` +
+        "appartient à un tiers. Les sous-domaines de vos clients seraient annoncés sur une " +
+        'zone que vous ne contrôlez pas.',
+      'Remplacez-le par votre propre domaine.',
     );
   }
 

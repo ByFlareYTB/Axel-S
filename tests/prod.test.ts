@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SECRET_EXEMPLE, verifierProduction } from '../scripts/prod.mjs';
+import { DOMAINE_EXEMPLE, SECRET_EXEMPLE, verifierProduction } from '../scripts/prod.mjs';
 
 /** Un environnement complet et correct, que chaque test dégrade sur un point. */
 const SAIN = {
@@ -15,6 +15,7 @@ const SAIN = {
   ENTREPRISE_EXPLOITANT: 'Axel S.',
   ENTREPRISE_ADRESSE: '37260 Monts',
   ENTREPRISE_EMAIL: 'contact@siteforgeai.fr',
+  ROOT_DOMAIN: 'siteforgeai.fr',
 };
 
 /** Les variables signalées, pour comparer sans dépendre de la formulation. */
@@ -99,6 +100,24 @@ describe('contrôle de la configuration de production', () => {
     expect(verifierProduction({ ...SAIN, RESEND_API_KEY: '', BREVO_API_KEY: 'xkeysib-xxx' })).toEqual(
       [],
     );
+  });
+
+  it('refuse le domaine d’exemple, qui appartient à un tiers', () => {
+    // Laissé en place, il ferait annoncer les sous-domaines des clients sur
+    // une zone que l'utilisateur ne contrôle pas.
+    const problemes = verifierProduction({ ...SAIN, ROOT_DOMAIN: DOMAINE_EXEMPLE });
+    expect(problemes).toHaveLength(1);
+    expect(problemes[0].variable).toBe('ROOT_DOMAIN');
+    expect(problemes[0].constat).toMatch(/tiers/);
+  });
+
+  it('lit encore l’ancien nom de variable pour le domaine racine', () => {
+    const env = { ...SAIN, ROOT_DOMAIN: '', CLOUDFLARE_ROOT_DOMAIN: 'siteforgeai.fr' };
+    expect(verifierProduction(env)).toEqual([]);
+  });
+
+  it('signale un domaine racine absent', () => {
+    expect(signalees({ ...SAIN, ROOT_DOMAIN: '' })).toEqual(['ROOT_DOMAIN']);
   });
 
   it('propose une correction pour chaque problème', () => {
