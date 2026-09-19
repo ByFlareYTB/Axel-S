@@ -39,6 +39,91 @@ function verifierUrl(url: string): void {
   }
 }
 
+/**
+ * Options de connexion adaptées à l'endroit où le code tourne.
+ *
+ * Deux réglages décident du succès sur un hébergement sans serveur, et aucun
+ * n'est celui par défaut.
+ *
+ * Le premier : un connecteur en mode transaction ne garde pas de session entre
+ * deux requêtes, si bien que les requêtes préparées — que postgres.js utilise
+ * d'office — échouent dès la seconde exécution.
+ *
+ * Le second : chaque instance sans serveur ouvre son propre lot de connexions.
+ * Cinq par instance épuisent le quota d'une base modeste dès que le trafic
+ * monte, alors qu'une seule suffit puisqu'une instance ne traite qu'une requête
+ * à la fois.
+ */
+export function optionsConnexion(
+  url: string,
+  environnement: Record<string, string | undefined> = process.env,
+): postgres.Options<{}> {
+  const sansServeur = Boolean(environnement.VERCEL || environnement.AWS_LAMBDA_FUNCTION_NAME);
+
+  let hote = '';
+  let port = '';
+  try {
+    const analysee = new URL(url);
+    hote = analysee.hostname.toLowerCase();
+    port = analysee.port;
+  } catch {
+    /* déjà signalé par verifierUrl */
+  }
+
+  const parConnecteur = hote.includes('pooler.') || port === '6543';
+
+  return {
+    max: sansServeur ? 1 : 5,
+    idle_timeout: 20,
+    // Sans délai explicite, une base injoignable fait attendre la requête
+    // jusqu'au bout du temps alloué à la fonction, sans jamais rien expliquer.
+    connect_timeout: 10,
+    prepare: !parConnecteur,
+    onnotice: () => {},
+  };
+}
+
+/**
+ * Traduit les échecs de connexion en consignes.
+ *
+ * Le cas fréquent sur un hébergement sans serveur : la connexion directe d'une
+ * base hébergée n'est joignable qu'en IPv6, que la plateforme ne sait pas
+ * router. L'erreur système ne le dit pas, et l'on cherche du côté du mot de
+ * passe pendant des heures.
+ */
+export function traduireErreurConnexion(err: unknown): Error {
+  const brut = err instanceof Error ? err.message : String(err);
+  const code = (err as { code?: string })?.code ?? '';
+
+  if (/ENETUNREACH|EHOSTUNREACH/.test(code + brut)) {
+    return new Error(
+      'La base est injoignable depuis cet hébergement : sa connexion directe ne répond ' +
+        "qu'en IPv6, que les plateformes sans serveur ne routent pas. Utilisez la chaîne " +
+        'du connecteur (« pooler ») plutôt que la connexion directe : dans Supabase, ' +
+        'Project Settings → Database → Connection string → onglet « Session pooler ». ' +
+        `(${brut})`,
+    );
+  }
+
+  if (/ETIMEDOUT|CONNECT_TIMEOUT/i.test(code + brut)) {
+    return new Error(
+      'Délai dépassé en tentant de joindre la base. Vérifiez que la chaîne pointe vers le ' +
+        'connecteur de votre hébergeur de base, et que le projet n’est pas en pause. ' +
+        `(${brut})`,
+    );
+  }
+
+  if (/password|authentication|SASL/i.test(brut)) {
+    return new Error(
+      'La base répond mais refuse les identifiants. Attention : la chaîne du connecteur ' +
+        'utilise un nom d’utilisateur différent de la connexion directe — recopiez-la ' +
+        `entièrement plutôt que d’en modifier une partie. (${brut})`,
+    );
+  }
+
+  return err instanceof Error ? err : new Error(brut);
+}
+
 function client(): postgres.Sql {
   if (!config.database.url) {
     throw new Error(
@@ -47,11 +132,7 @@ function client(): postgres.Sql {
   }
   verifierUrl(config.database.url);
   if (!globalPg.__siteforgeSql) {
-    globalPg.__siteforgeSql = postgres(config.database.url, {
-      max: 5,
-      idle_timeout: 20,
-      onnotice: () => {},
-    });
+    globalPg.__siteforgeSql = postgres(config.database.url, optionsConnexion(config.database.url));
   }
   return globalPg.__siteforgeSql;
 }
@@ -71,7 +152,7 @@ function whereFragment(sql: postgres.Sql, where: Record<string, unknown>) {
   );
 }
 
-export const pgSource: DataSource = {
+const adaptateur: DataSource = {
   kind: 'postgres',
 
   async list<T>(table: TableName, where: Record<string, unknown> = {}, opts?: QueryOptions<T>) {
@@ -127,3 +208,25 @@ export const pgSource: DataSource = {
     return Number((row as { n: number }).n);
   },
 };
+
+/**
+ * Traduit les erreurs de toutes les opérations, sans les répéter une à une.
+ *
+ * Un échec de connexion se produit à la première requête venue, quelle qu'elle
+ * soit : n'habiller qu'une méthode laisserait les autres remonter le message
+ * système brut.
+ */
+export const pgSource: DataSource = new Proxy(adaptateur, {
+  get(cible, propriete, recepteur) {
+    const valeur = Reflect.get(cible, propriete, recepteur);
+    if (typeof valeur !== 'function') return valeur;
+
+    return async (...args: unknown[]) => {
+      try {
+        return await (valeur as (...a: unknown[]) => Promise<unknown>).apply(cible, args);
+      } catch (err) {
+        throw traduireErreurConnexion(err);
+      }
+    };
+  },
+});
