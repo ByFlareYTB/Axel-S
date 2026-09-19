@@ -123,6 +123,18 @@ describe('stockage fichier de production', () => {
     }
   });
 
+  it('nomme le piège des variables par environnement sur Vercel', async () => {
+    const { fileSource } = await chargerStore();
+    delete (globalThis as { __siteforgeFichier?: unknown }).__siteforgeFichier;
+    process.env.VERCEL = '1';
+
+    // La variable renseignée pour la seule production laisse une
+    // préproduction échouer avec exactement la même erreur.
+    await expect(fileSource.list('clients')).rejects.toThrow(/Preview/);
+
+    delete process.env.VERCEL;
+  });
+
   it('ne laisse jamais de fichier temporaire derrière lui', async () => {
     const { fileSource, cheminFichierDonnees } = await chargerStore();
     await fileSource.insert('prospects', { raison_sociale: 'Test', statut: 'non_vu', score: 1 });

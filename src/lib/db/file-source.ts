@@ -63,7 +63,15 @@ function charger(): Map<TableName, Row[]> {
       `Stockage fichier impossible sur ${plateforme} : son système de fichiers est éphémère, ` +
         'vos clients, devis et factures seraient effacés au prochain déploiement. ' +
         'Renseignez DATABASE_URL avec une base PostgreSQL (Supabase propose une offre gratuite), ' +
-        'puis lancez les migrations avec `npm run db:migrate`.',
+        'puis lancez les migrations avec `npm run db:migrate`.' +
+        // Le piège d'après : la variable existe, mais pas pour l'environnement
+        // qui exécute ce déploiement. Une préproduction ne voit pas les
+        // variables réservées à la production, et l'erreur est la même.
+        (plateforme === 'Vercel'
+          ? ' Si DATABASE_URL y figure déjà, vérifiez qu’elle est cochée pour TOUS les ' +
+            'environnements — Production, Preview et Development : un déploiement de ' +
+            'préproduction ne voit pas les variables réservées à la production.'
+          : ''),
     );
   }
 
