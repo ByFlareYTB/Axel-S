@@ -65,25 +65,66 @@ function jugerCname(nom, valeurs, racine, role) {
 }
 
 /**
- * Juge le SPF.
+ * Sous-domaines qu'un service tiers réclame pour lui-même.
  *
- * Sa présence ne suffit pas : un SPF qui n'autorise pas le fournisseur d'envoi
- * est pire que pas de SPF du tout, puisqu'il le désigne explicitement comme
- * non autorisé. C'est le cas du SPF que pose un hébergeur de messagerie par
- * défaut — il n'autorise que ses propres serveurs, et se termine souvent par
- * « -all », un refus ferme.
+ * Ils doivent être déclarés explicitement, car l'enregistrement générique les
+ * capterait sinon : un générique ne s'applique qu'aux noms qui n'ont pas
+ * d'enregistrement propre, mais il s'applique à TOUS les autres. Un
+ * sous-domaine attendu ailleurs et non déclaré ne produit donc pas une erreur
+ * visible — il répond, et répond faux.
  */
-function jugerSpf(valeurs) {
+export const SOUS_DOMAINES_RESERVES = ['send', 'rsend'];
+
+/**
+ * Juge l'autorisation d'envoi.
+ *
+ * Resend propose deux dispositions. L'ancienne ajoute un `include:` au SPF du
+ * domaine. La nouvelle délègue un sous-domaine d'envoi entier par CNAME : le
+ * SPF vérifié est alors celui que Resend publie sur ce sous-domaine, et celui
+ * du domaine principal ne concerne plus que votre messagerie. Les confondre
+ * conduit à « corriger » un SPF qui n'avait rien à se reprocher.
+ */
+function jugerEnvoi(lectures, racine) {
   const role = 'Autorise votre fournisseur à écrire en votre nom.';
-  const spf = valeurs.find((v) => v.includes('v=spf1'));
+  const cible = (lectures.sendCname ?? [])[0]?.replace(/\.$/, '').toLowerCase();
+
+  // Le générique répond à la place du sous-domaine d'envoi : l'enregistrement
+  // que Resend réclame n'a pas été créé, et rien ne le signale.
+  if (cible === CIBLE_VERCEL) {
+    return {
+      nom: 'Envoi (sous-domaine délégué)',
+      etat: ERRONE,
+      role,
+      constat:
+        `« send.${racine} » pointe vers l'hébergeur du site, pas vers Resend. ` +
+        "C'est l'enregistrement générique « * » qui répond à sa place : il capte tout nom " +
+        "qui n'a pas d'enregistrement propre.",
+      correction:
+        `Créez des CNAME explicites « send » et « rsend » vers les cibles que ` +
+        'resend.com/domains affiche. Déclarés nommément, ils passent devant le générique.',
+    };
+  }
+
+  if (cible) {
+    return {
+      nom: 'Envoi (sous-domaine délégué)',
+      etat: OK,
+      role,
+      constat: `« send.${racine} » est délégué à « ${cible} ».`,
+      correction: null,
+    };
+  }
+
+  // Aucune délégation : c'est le SPF du domaine principal qui fait foi.
+  const spf = (lectures.spf ?? []).find((v) => v.includes('v=spf1'));
 
   if (!spf) {
     return {
       nom: 'SPF',
       etat: MANQUANT,
       role,
-      constat: 'Aucun enregistrement SPF trouvé.',
-      correction: 'Copiez le TXT que resend.com/domains affiche, sans le recomposer.',
+      constat: 'Aucun SPF, et aucun sous-domaine d’envoi délégué.',
+      correction: 'Suivez la disposition que resend.com/domains affiche pour votre domaine.',
     };
   }
 
@@ -100,9 +141,9 @@ function jugerSpf(valeurs) {
       `« ${spf} » n'autorise pas Resend` +
       (ferme ? ', et se termine par un refus ferme : vos emails échoueront au contrôle SPF.' : '.'),
     correction:
-      'Sur resend.com/domains, Resend indique où poser son SPF — le plus souvent sur un ' +
-      'sous-domaine d’envoi dédié, ce qui laisse intact le SPF de votre messagerie. ' +
-      'Suivez sa consigne plutôt que de modifier le SPF existant à la main.',
+      'Sur resend.com/domains, suivez la disposition affichée : soit un sous-domaine ' +
+      'd’envoi délégué par CNAME, soit un « include: » à ajouter au SPF existant. ' +
+      'N’ajoutez jamais un second enregistrement SPF — un domaine n’en accepte qu’un.',
   };
 }
 
@@ -157,7 +198,7 @@ export function interpreter(lectures, racine) {
   // Resend impose la forme exacte de ces valeurs et la fait varier ; on
   // constate leur présence sans prétendre en valider le contenu.
 
-  resultats.push(jugerSpf((lectures.spf ?? []).concat(lectures.spfSend ?? [])));
+  resultats.push(jugerEnvoi(lectures, racine));
 
   resultats.push(
     lectures.dkim?.length

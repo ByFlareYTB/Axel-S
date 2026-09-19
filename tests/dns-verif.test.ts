@@ -46,27 +46,56 @@ describe('lecture des CNAME vers l’hébergeur', () => {
   });
 });
 
-describe('lecture du SPF', () => {
-  it('refuse un SPF qui n’autorise pas le fournisseur d’envoi', () => {
-    // Le SPF posé par défaut par un hébergeur de messagerie : présent,
-    // valide, et fermé à tout autre expéditeur.
+describe('lecture de l’autorisation d’envoi', () => {
+  it('reconnaît le sous-domaine d’envoi capté par le générique', () => {
+    // Le piège du générique : il ne laisse pas le nom absent, il y répond.
+    // L'enregistrement que le fournisseur réclame manque, et rien ne le dit.
+    const resultat = juger(
+      { sendCname: [CIBLE_VERCEL], spf: ['v=spf1 include:mx.ovh.com -all'] },
+      'Envoi (sous-domaine délégué)',
+    );
+    expect(resultat.etat).toBe('errone');
+    expect(resultat.constat).toContain('générique');
+    expect(resultat.correction).toContain('rsend');
+  });
+
+  it('accepte un sous-domaine d’envoi correctement délégué', () => {
+    const resultat = juger(
+      { sendCname: ['send.forge.rmta.net'], spf: ['v=spf1 include:mx.ovh.com -all'] },
+      'Envoi (sous-domaine délégué)',
+    );
+    expect(resultat.etat).toBe('ok');
+  });
+
+  it('ne reproche rien au SPF de la messagerie quand l’envoi est délégué', () => {
+    // Avec un sous-domaine délégué, le SPF du domaine principal ne concerne
+    // plus que la messagerie : le corriger serait casser ce qui marche.
+    const resultats = interpreter(
+      { sendCname: ['send.forge.rmta.net'], spf: ['v=spf1 include:mx.ovh.com -all'] },
+      RACINE,
+    ) as Resultat[];
+    expect(resultats.find((r) => r.nom === 'SPF')).toBeUndefined();
+  });
+
+  it('juge le SPF du domaine quand aucun sous-domaine n’est délégué', () => {
     const resultat = juger({ spf: ['v=spf1 include:mx.ovh.com -all'] }, 'SPF');
     expect(resultat.etat).toBe('errone');
     expect(resultat.constat).toContain('refus ferme');
   });
 
-  it('signale l’absence d’autorisation sans dramatiser un SPF souple', () => {
-    const resultat = juger({ spf: ['v=spf1 include:mx.ovh.com ?all'] }, 'SPF');
-    expect(resultat.etat).toBe('errone');
-    expect(resultat.constat).not.toContain('refus ferme');
-  });
-
-  it('accepte un SPF qui autorise Resend', () => {
+  it('accepte l’ancienne disposition, par include', () => {
     expect(juger({ spf: ['v=spf1 include:amazonses.com ~all'] }, 'SPF').etat).toBe('ok');
-    expect(juger({ spfSend: ['v=spf1 include:resend.com ~all'] }, 'SPF').etat).toBe('ok');
   });
 
-  it('signale un SPF absent', () => {
+  it('met en garde contre un second enregistrement SPF', () => {
+    // Deux « v=spf1 » sur un domaine produisent une erreur permanente,
+    // strictement pire que l'absence de SPF.
+    expect(juger({ spf: ['v=spf1 include:mx.ovh.com -all'] }, 'SPF').correction).toContain(
+      'jamais un second',
+    );
+  });
+
+  it('signale l’absence totale d’autorisation', () => {
     expect(juger({}, 'SPF').etat).toBe('manquant');
   });
 });

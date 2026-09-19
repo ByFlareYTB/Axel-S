@@ -67,7 +67,9 @@ const lectures = {
   wildcard: await lire('resolveCname', sonde),
   acme: await lire('resolveCname', `_acme-challenge.${racine}`),
   spf: await lire('resolveTxt', racine),
-  spfSend: await lire('resolveTxt', `send.${racine}`),
+  // Le sous-domaine d'envoi doit être lu en CNAME : c'est là que se voit s'il
+  // est réellement délégué au fournisseur, ou capté par le générique.
+  sendCname: await lire('resolveCname', `send.${racine}`),
   dkim: await lire('resolveTxt', `resend._domainkey.${racine}`),
   dmarc: await lire('resolveTxt', `_dmarc.${racine}`),
 };
